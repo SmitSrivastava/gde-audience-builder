@@ -23,8 +23,8 @@
     --muted: 220 13% 91%;
     --muted-foreground: 215 10% 47%;
 
-    --accent: 220 13% 91%;
-    --accent-foreground: 215 25% 27%;
+    --accent: 231 48% 58%;
+    --accent-foreground: 0 0% 98%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
@@ -55,7 +55,7 @@
     --popover: 215 28% 9%;
     --popover-foreground: 213 31% 91%;
 
-    --primary: 231 48% 48%;
+    --primary: 231 48% 58%;
     --primary-foreground: 0 0% 98%;
 
     --secondary: 215 27% 17%;
@@ -64,7 +64,7 @@
     --muted: 215 27% 17%;
     --muted-foreground: 217 10% 65%;
 
-    --accent: 215 27% 17%;
+    --accent: 231 48% 58%;
     --accent-foreground: 213 31% 91%;
 
     --destructive: 0 62% 50%;
@@ -76,7 +76,7 @@
 
     --sidebar-background: 215 28% 9%;
     --sidebar-foreground: 213 31% 91%;
-    --sidebar-primary: 231 48% 48%;
+    --sidebar-primary: 231 48% 58%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 215 27% 17%;
     --sidebar-accent-foreground: 213 31% 91%;
@@ -102,17 +102,33 @@
   }
   
   .gradient-text {
-    @apply bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-blue-600 via-purple-600 to-blue-800 bg-clip-text text-transparent;
   }
   
   .gradient-border {
     background: linear-gradient(white, white) padding-box,
-                linear-gradient(45deg, #3b82f6, #8b5cf6) border-box;
+                linear-gradient(135deg, hsl(231 48% 48%), hsl(269 48% 58%), hsl(231 48% 38%)) border-box;
     border: 2px solid transparent;
   }
   
   .dark .gradient-border {
     background: linear-gradient(rgb(30 41 59), rgb(30 41 59)) padding-box,
-                linear-gradient(45deg, #3b82f6, #8b5cf6) border-box;
+                linear-gradient(135deg, hsl(231 48% 58%), hsl(269 48% 68%), hsl(231 48% 48%)) border-box;
+  }
+
+  .card-gradient {
+    background: linear-gradient(135deg, hsl(231 48% 48% / 0.05), hsl(269 48% 58% / 0.05));
+  }
+
+  .dark .card-gradient {
+    background: linear-gradient(135deg, hsl(231 48% 58% / 0.1), hsl(269 48% 68% / 0.1));
+  }
+
+  .hero-gradient {
+    background: linear-gradient(135deg, hsl(231 48% 48% / 0.1), hsl(269 48% 58% / 0.1), hsl(231 48% 38% / 0.05));
+  }
+
+  .dark .hero-gradient {
+    background: linear-gradient(135deg, hsl(231 48% 58% / 0.15), hsl(269 48% 68% / 0.15), hsl(231 48% 48% / 0.1));
   }
 }

@@ -36,23 +36,24 @@ const EnrichAudience = () => {
   const [enrichedRowCount, setEnrichedRowCount] = useState<number | null>(null);
   const [isEnriching, setIsEnriching] = useState(false);
 
+  // External datasets available for enrichment
   const enrichmentDatasets: EnrichmentDataset[] = [
     {
       id: '1',
       name: 'Customer Purchase History',
-      description: 'Historical transaction data',
+      description: 'Historical transaction data from retail partners',
       fields: ['email_address', 'purchase_amount', 'purchase_date', 'product_category']
     },
     {
       id: '2',
       name: 'Engagement Metrics',
-      description: 'Email and web engagement data',
+      description: 'Email and web engagement data from marketing platforms',
       fields: ['email_address', 'open_rate', 'click_rate', 'last_engagement']
     },
     {
       id: '3',
       name: 'Demographics',
-      description: 'Additional demographic information',
+      description: 'Additional demographic information from data partners',
       fields: ['email_address', 'income_bracket', 'education_level', 'household_size']
     }
   ];
@@ -86,7 +87,7 @@ const EnrichAudience = () => {
     if (selectedDatasets.length === 0) {
       toast({
         title: "Error",
-        description: "Please select at least one enrichment dataset",
+        description: "Please select at least one external dataset for enrichment",
         variant: "destructive",
       });
       return;
@@ -94,7 +95,6 @@ const EnrichAudience = () => {
 
     setIsEnriching(true);
     try {
-      // Simulate API call
       console.log('Running enrichment with:', { 
         audienceId: id, 
         datasets: selectedDatasets, 
@@ -108,7 +108,7 @@ const EnrichAudience = () => {
         setIsEnriching(false);
         toast({
           title: "Enrichment Complete",
-          description: `Added ${newCount - audience.rowCount} enriched records`,
+          description: `Your audience has been enriched with ${newCount - audience.rowCount} additional data points`,
         });
       }, 2000);
     } catch (error) {
@@ -125,7 +125,6 @@ const EnrichAudience = () => {
   const handleSaveEnrichedAudience = async () => {
     try {
       console.log('Saving enriched audience:', { audienceId: id, enrichedRowCount });
-      // API call would go here
       toast({
         title: "Success",
         description: "Enriched audience saved successfully",
@@ -144,10 +143,10 @@ const EnrichAudience = () => {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">
-          Enrich Audience
+          Enrich Audience with External Data
         </h1>
         <p className="text-slate-600 dark:text-slate-300">
-          Enhance your audience with additional first-party data
+          Enhance your audience by joining it with external datasets
         </p>
       </div>
 
@@ -156,10 +155,10 @@ const EnrichAudience = () => {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-              {audience.name}
+              Source Audience: {audience.name}
             </h2>
             <p className="text-slate-600 dark:text-slate-300">
-              {audience.rowCount.toLocaleString()} records
+              {audience.rowCount.toLocaleString()} records to be enriched
             </p>
           </div>
           <button
@@ -180,14 +179,17 @@ const EnrichAudience = () => {
         )}
       </div>
 
-      {/* Dataset Selection */}
+      {/* External Dataset Selection */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-700">
         <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">
-          Select Enrichment Datasets
+          Select External Datasets for Enrichment
         </h3>
+        <p className="text-slate-600 dark:text-slate-300 text-sm mb-4">
+          Choose which external datasets to join with your audience
+        </p>
         <div className="space-y-3">
           {enrichmentDatasets.map(dataset => (
-            <label key={dataset.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer">
+            <label key={dataset.id} className="flex items-center gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer">
               <input
                 type="checkbox"
                 checked={selectedDatasets.includes(dataset.id)}
@@ -202,7 +204,7 @@ const EnrichAudience = () => {
                   {dataset.description}
                 </div>
                 <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                  Fields: {dataset.fields.join(', ')}
+                  Available fields: {dataset.fields.join(', ')}
                 </div>
               </div>
             </label>
@@ -215,7 +217,7 @@ const EnrichAudience = () => {
         <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-700">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-              Field Mapping
+              Configure Field Mapping
             </h3>
             <button
               onClick={addFieldMapping}
@@ -275,7 +277,7 @@ const EnrichAudience = () => {
       <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-700">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-            Run Enrichment
+            Execute Enrichment
           </h3>
           <button
             onClick={handleRunEnrichment}
@@ -287,7 +289,7 @@ const EnrichAudience = () => {
             }`}
           >
             <Play size={16} />
-            {isEnriching ? 'Enriching...' : 'Run Enrichment'}
+            {isEnriching ? 'Processing...' : 'Run Enrichment'}
           </button>
         </div>
         
@@ -297,13 +299,13 @@ const EnrichAudience = () => {
               Enrichment Complete
             </div>
             <div className="text-green-600 dark:text-green-300 text-sm">
-              Original: {audience.rowCount.toLocaleString()} records
+              Original audience: {audience.rowCount.toLocaleString()} records
             </div>
             <div className="text-green-600 dark:text-green-300 text-sm">
-              Enriched: {enrichedRowCount.toLocaleString()} records
+              Enriched audience: {enrichedRowCount.toLocaleString()} records
             </div>
             <div className="text-green-600 dark:text-green-300 text-sm">
-              Added: {(enrichedRowCount - audience.rowCount).toLocaleString()} records
+              New data points added: {(enrichedRowCount - audience.rowCount).toLocaleString()}
             </div>
           </div>
         )}
@@ -318,7 +320,7 @@ const EnrichAudience = () => {
                 Save Enriched Audience
               </h3>
               <p className="text-slate-600 dark:text-slate-300 text-sm mt-1">
-                This will create a new version of your audience with the enriched data
+                Create a new version of your audience with the enriched external data
               </p>
             </div>
             <button

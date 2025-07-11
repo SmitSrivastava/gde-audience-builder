@@ -28,8 +28,8 @@ const App = () => (
               <Route index element={<Dashboard />} />
               <Route path="admin/*" element={<Admin />} />
               <Route path="segmentation/*" element={<Segmentation />} />
-              <Route path="enrichment" element={<Enrichment />} />
-              <Route path="activation" element={<Activation />} />
+              <Route path="enrichment/*" element={<Enrichment />} />
+              <Route path="activation/*" element={<Activation />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

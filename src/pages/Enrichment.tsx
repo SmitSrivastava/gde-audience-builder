@@ -1,7 +1,9 @@
 
 import React from 'react';
+import { Routes, Route } from 'react-router-dom';
+import EnrichAudience from './Enrichment/EnrichAudience';
 
-const Enrichment = () => {
+const EnrichmentHome = () => {
   return (
     <div className="space-y-6">
       <div>
@@ -19,17 +21,23 @@ const Enrichment = () => {
             <span className="text-2xl">🔧</span>
           </div>
           <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
-            Enrichment Module
+            Select an Audience to Enrich
           </h3>
           <p className="text-slate-600 dark:text-slate-300 mb-6">
-            The enrichment functionality will be available soon. This module will allow you to enhance your audience segments with additional first-party and third-party data sources.
+            Navigate to the Segmentation module to select an audience for enrichment, or use the "Enrich" button from your audience list.
           </p>
-          <button className="px-6 py-3 bg-teal-500 hover:bg-teal-600 text-white rounded-2xl font-medium transition-colors">
-            Learn More
-          </button>
         </div>
       </div>
     </div>
+  );
+};
+
+const Enrichment = () => {
+  return (
+    <Routes>
+      <Route index element={<EnrichmentHome />} />
+      <Route path="audiences/:id" element={<EnrichAudience />} />
+    </Routes>
   );
 };
 

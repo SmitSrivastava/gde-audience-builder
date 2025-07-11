@@ -1,7 +1,9 @@
 
 import React from 'react';
+import { Routes, Route } from 'react-router-dom';
+import ActivateAudience from './Activation/ActivateAudience';
 
-const Activation = () => {
+const ActivationHome = () => {
   return (
     <div className="space-y-6">
       <div>
@@ -19,17 +21,23 @@ const Activation = () => {
             <span className="text-2xl">🚀</span>
           </div>
           <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">
-            Activation Module
+            Select an Audience to Activate
           </h3>
           <p className="text-slate-600 dark:text-slate-300 mb-6">
-            The activation functionality will be available soon. This module will enable you to push your audience segments to various advertising platforms including Google Ads, Meta, and more.
+            Navigate to the Segmentation module to select an audience for activation, or use the "Activate" button from your audience list.
           </p>
-          <button className="px-6 py-3 bg-teal-500 hover:bg-teal-600 text-white rounded-2xl font-medium transition-colors">
-            Learn More
-          </button>
         </div>
       </div>
     </div>
+  );
+};
+
+const Activation = () => {
+  return (
+    <Routes>
+      <Route index element={<ActivationHome />} />
+      <Route path="audiences/:id" element={<ActivateAudience />} />
+    </Routes>
   );
 };
 

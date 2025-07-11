@@ -1,6 +1,7 @@
-
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Play, Code, Plus, Trash2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 interface Partner {
   id: string;
@@ -24,8 +25,10 @@ interface QueryRule {
 }
 
 const CreateAudience = () => {
+  const navigate = useNavigate();
+  const { toast } = useToast();
   const [selectedPartners, setSelectedPartners] = useState<string[]>([]);
-  const [partners] = useState<Partner[]>([
+  const [partners, setPartners] = useState<Partner[]>([
     {
       id: '1',
       name: 'Retail Analytics Co',
@@ -56,6 +59,7 @@ WHERE age > 25
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [previewStats, setPreviewStats] = useState({ count: 0, runtime: 0 });
   const [audienceName, setAudienceName] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
 
   const operators = ['=', '!=', '>', '<', '>=', '<=', 'IN', 'NOT IN', 'LIKE'];
   const fields = ['age', 'gender', 'city', 'purchase_amount', 'last_visit_date', 'email_domain'];
@@ -69,8 +73,18 @@ WHERE age > 25
   };
 
   const handleDatasetToggle = (partnerId: string, datasetId: string) => {
-    // Implementation for dataset selection
-    console.log('Toggle dataset:', partnerId, datasetId);
+    setPartners(prev => prev.map(partner => 
+      partner.id === partnerId 
+        ? {
+            ...partner,
+            datasets: partner.datasets.map(dataset =>
+              dataset.id === datasetId 
+                ? { ...dataset, selected: !dataset.selected }
+                : dataset
+            )
+          }
+        : partner
+    ));
   };
 
   const addQueryRule = () => {
@@ -96,29 +110,95 @@ WHERE age > 25
 
   const handlePreview = async () => {
     try {
-      // Mock API call
       console.log('Running preview with SQL:', sqlQuery);
-      setPreviewData([
-        { id: 1, name: 'John Doe', age: 32, city: 'New York' },
-        { id: 2, name: 'Jane Smith', age: 28, city: 'New York' }
-      ]);
+      // Simulate API call
+      const mockData = [
+        { id: 1, name: 'John Doe', age: 32, city: 'New York', email: 'john@example.com' },
+        { id: 2, name: 'Jane Smith', age: 28, city: 'New York', email: 'jane@example.com' },
+        { id: 3, name: 'Bob Johnson', age: 35, city: 'New York', email: 'bob@example.com' }
+      ];
+      
+      setPreviewData(mockData);
       setPreviewStats({ count: 15420, runtime: 2.3 });
+      
+      toast({
+        title: "Preview Complete",
+        description: `Found ${mockData.length} sample records from ${15420} total`,
+      });
     } catch (error) {
       console.error('Preview failed:', error);
+      toast({
+        title: "Error",
+        description: "Preview failed. Please check your SQL query.",
+        variant: "destructive",
+      });
     }
   };
 
   const handleCreateAudience = async () => {
+    if (!audienceName.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter an audience name",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!sqlQuery.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a SQL query",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (selectedPartners.length === 0) {
+      toast({
+        title: "Error",
+        description: "Please select at least one data partner",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsCreating(true);
     try {
       const audienceData = {
         name: audienceName,
         sql: sqlQuery,
-        partners: selectedPartners
+        partners: selectedPartners,
+        datasets: partners
+          .filter(partner => selectedPartners.includes(partner.id))
+          .flatMap(partner => 
+            partner.datasets
+              .filter(dataset => dataset.selected)
+              .map(dataset => ({ partnerId: partner.id, datasetId: dataset.id }))
+          )
       };
+      
       console.log('Creating audience:', audienceData);
-      // API call would go here
+      
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      toast({
+        title: "Success",
+        description: `Audience "${audienceName}" created successfully`,
+      });
+      
+      // Navigate back to audience list
+      navigate('/segmentation');
     } catch (error) {
       console.error('Failed to create audience:', error);
+      toast({
+        title: "Error",
+        description: "Failed to create audience. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -172,7 +252,7 @@ WHERE age > 25
                   </h4>
                   <div className="space-y-2">
                     {partner.datasets.map(dataset => (
-                      <label key={dataset.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                      <label key={dataset.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={dataset.selected}
@@ -315,6 +395,7 @@ WHERE age > 25
                     <th className="text-left py-2 font-medium text-slate-700 dark:text-slate-300">Name</th>
                     <th className="text-left py-2 font-medium text-slate-700 dark:text-slate-300">Age</th>
                     <th className="text-left py-2 font-medium text-slate-700 dark:text-slate-300">City</th>
+                    <th className="text-left py-2 font-medium text-slate-700 dark:text-slate-300">Email</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -324,6 +405,7 @@ WHERE age > 25
                       <td className="py-2 text-slate-900 dark:text-white">{row.name}</td>
                       <td className="py-2 text-slate-900 dark:text-white">{row.age}</td>
                       <td className="py-2 text-slate-900 dark:text-white">{row.city}</td>
+                      <td className="py-2 text-slate-900 dark:text-white">{row.email}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -345,14 +427,14 @@ WHERE age > 25
           />
           <button
             onClick={handleCreateAudience}
-            disabled={!audienceName || !sqlQuery}
+            disabled={isCreating || !audienceName.trim() || !sqlQuery.trim()}
             className={`px-6 py-3 rounded-2xl font-medium transition-colors ${
-              audienceName && sqlQuery
-                ? 'bg-teal-500 hover:bg-teal-600 text-white'
-                : 'bg-slate-300 dark:bg-slate-600 text-slate-500 dark:text-slate-400 cursor-not-allowed'
+              isCreating || !audienceName.trim() || !sqlQuery.trim()
+                ? 'bg-slate-300 dark:bg-slate-600 text-slate-500 dark:text-slate-400 cursor-not-allowed'
+                : 'bg-teal-500 hover:bg-teal-600 text-white'
             }`}
           >
-            Create Audience
+            {isCreating ? 'Creating...' : 'Create Audience'}
           </button>
         </div>
       </div>

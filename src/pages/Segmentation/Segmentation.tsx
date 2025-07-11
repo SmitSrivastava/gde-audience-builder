@@ -1,15 +1,25 @@
 
 import React from 'react';
-import { Routes, Route, NavLink } from 'react-router-dom';
+import { Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { Plus, List } from 'lucide-react';
 import CreateAudience from './CreateAudience';
 
 const AudienceList = () => {
+  const navigate = useNavigate();
+  
   const audiences = [
     { id: '1', name: 'High-Value Shoppers', created: '2024-01-15', count: 15420, status: 'Active' },
     { id: '2', name: 'Mobile App Users', created: '2024-01-14', count: 8932, status: 'Active' },
     { id: '3', name: 'Email Subscribers', created: '2024-01-13', count: 25670, status: 'Processing' }
   ];
+
+  const handleEnrich = (audienceId: string) => {
+    navigate(`/enrichment/audiences/${audienceId}`);
+  };
+
+  const handleActivate = (audienceId: string) => {
+    navigate(`/activation/audiences/${audienceId}`);
+  };
 
   return (
     <div className="space-y-6">
@@ -54,10 +64,16 @@ const AudienceList = () => {
                     </td>
                     <td className="py-4">
                       <div className="flex gap-2">
-                        <button className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded-lg transition-colors">
+                        <button 
+                          onClick={() => handleEnrich(audience.id)}
+                          className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded-lg transition-colors"
+                        >
                           Enrich
                         </button>
-                        <button className="px-3 py-1 bg-teal-500 hover:bg-teal-600 text-white text-sm rounded-lg transition-colors">
+                        <button 
+                          onClick={() => handleActivate(audience.id)}
+                          className="px-3 py-1 bg-teal-500 hover:bg-teal-600 text-white text-sm rounded-lg transition-colors"
+                        >
                           Activate
                         </button>
                       </div>

@@ -1,145 +1,193 @@
 
 import React from 'react';
-import { Users, Database, Zap, Target, TrendingUp, Activity, BarChart3, Sparkles } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Users, Database, Sparkles, Target, Activity, ArrowRight } from 'lucide-react';
 
 const Dashboard = () => {
+  const navigate = useNavigate();
+
+  const insights = [
+    'India OTT market in growth stage',
+    'Never Members average 1.6 OTT subscriptions',
+    'Members average 4.2 OTT subscriptions'
+  ];
+
   const stats = [
-    { label: 'Active Audiences', value: '247', icon: Users, color: 'from-blue-500 to-blue-600', trend: '+12%' },
-    { label: 'Connected Datasets', value: '89', icon: Database, color: 'from-purple-500 to-purple-600', trend: '+8%' },
-    { label: 'Enrichments Run', value: '1,234', icon: Zap, color: 'from-indigo-500 to-indigo-600', trend: '+24%' },
-    { label: 'Activations', value: '456', icon: Target, color: 'from-violet-500 to-violet-600', trend: '+16%' }
+    { label: 'Active Audience Cohorts', value: '18', badge: 'N' },
+    { label: 'Connected Data Partners', value: '12', badge: 'N' },
+    { label: 'Enriched Audience Sets', value: '9', badge: 'N' },
+    { label: 'Activated Cohorts', value: '6', badge: 'N' },
+    { label: 'Estimated Reachable Profiles', value: '42.8M', badge: 'N' }
+  ];
+
+  const cohortCategories = [
+    {
+      title: 'OTT Maturity Cohorts',
+      subtitle: 'Identify users based on subscription behavior and OTT adoption stage',
+      chips: ['Single OTT Users', 'Multi-OTT Power Users', 'OTT Trial Users', 'Cord Cutters'],
+      size: '35M', conversion: 'High', enrichmentReady: true,
+    },
+    {
+      title: 'Affluence & Spending Capacity',
+      subtitle: 'Segment users by purchasing power and spending patterns across platforms',
+      chips: ['Premium Spenders', 'Mid-Tier Buyers', 'Value Seekers'],
+      size: '28M', conversion: 'High', enrichmentReady: true,
+    },
+    {
+      title: 'Viewing Affinity Intelligence',
+      subtitle: 'Map content preferences and genre affinities for precision targeting',
+      chips: ['Drama Enthusiasts', 'Sports Fanatics', 'Documentary Watchers', 'K-Content Fans'],
+      size: '42M', conversion: 'Medium', enrichmentReady: true,
+    },
+    {
+      title: 'Platform Behavior & Attention Source',
+      subtitle: 'Understand cross-platform engagement and attention allocation patterns',
+      chips: ['Mobile-First Viewers', 'CTV Dominant', 'Multi-Screen Users'],
+      size: '31M', conversion: 'Medium', enrichmentReady: false,
+    },
+    {
+      title: 'Life Stage & Household Context',
+      subtitle: 'Target based on household composition, life events, and family dynamics',
+      chips: ['Young Professionals', 'New Parents', 'Empty Nesters', 'Student Households'],
+      size: '22M', conversion: 'High', enrichmentReady: true,
+    }
   ];
 
   const recentActivities = [
-    { text: 'New audience "High-Value Shoppers" created', time: '2 mins ago', type: 'create' },
-    { text: 'Dataset "Customer Purchase History" enriched', time: '5 mins ago', type: 'enrich' },
-    { text: 'Google Ads activation completed', time: '12 mins ago', type: 'activate' },
-    { text: 'Azure integration established', time: '1 hour ago', type: 'integrate' }
+    { text: 'Urban Premium OTT Viewers enriched with affluence signals', time: '2 mins ago' },
+    { text: 'Business Drama Audience activated on Meta', time: '12 mins ago' },
+    { text: 'Family Business Cohort synced to DV360', time: '1 hour ago' },
+    { text: 'Multi-OTT Power Users segment refreshed', time: '3 hours ago' }
   ];
 
   const quickActions = [
-    {
-      title: 'Create New Audience',
-      description: 'Start building a new audience segment',
-      icon: Users,
-      gradient: 'from-blue-500 to-purple-600'
-    },
-    {
-      title: 'Onboard Entity',
-      description: 'Add a new client or data partner',
-      icon: Database,
-      gradient: 'from-purple-500 to-indigo-600'
-    },
-    {
-      title: 'View Activations',
-      description: 'Check activation status and performance',
-      icon: Target,
-      gradient: 'from-indigo-500 to-violet-600'
-    }
+    { title: 'Build from Cohort', description: 'Start from a pre-built audience template', icon: Users, action: () => navigate('/segmentation') },
+    { title: 'Enrich Audience', description: 'Enhance client data with audience insights', icon: Sparkles, action: () => navigate('/enrichment') },
+    { title: 'Activate to Platform', description: 'Deploy audiences to ad platforms', icon: Target, action: () => navigate('/activation') },
+    { title: 'Explore Audience Intelligence', description: 'Deep-dive into cohort analytics', icon: Database, action: () => navigate('/segmentation') },
   ];
 
   return (
     <div className="space-y-8">
       {/* Hero Section */}
-      <div className="hero-gradient rounded-3xl p-8 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-400/20 to-purple-600/20 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-purple-400/20 to-indigo-600/20 rounded-full blur-2xl"></div>
+      <div className="hero-gradient rounded-2xl p-10 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-[hsl(0_85%_50%/0.08)] rounded-full blur-[100px]"></div>
+        <div className="absolute bottom-0 left-1/3 w-64 h-64 bg-[hsl(0_85%_30%/0.06)] rounded-full blur-[80px]"></div>
         <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-4">
-            <Sparkles className="text-blue-600 dark:text-blue-400" size={28} />
-            <h1 className="text-4xl font-bold gradient-text">
-              Welcome to GroupM Data Exchange
-            </h1>
-          </div>
-          <p className="text-xl text-slate-600 dark:text-slate-300 max-w-2xl">
-            Unlock the power of your data with advanced segmentation, enrichment, and activation capabilities
+          <h1 className="text-5xl font-extrabold text-foreground mb-4 tracking-tight">
+            Welcome to WPP Data Exchange
+          </h1>
+          <p className="text-lg text-muted-foreground max-w-3xl leading-relaxed">
+            Powering Netflix's next phase of growth through precision audience intelligence, enrichment, and activation across India's evolving OTT landscape
           </p>
+        </div>
+
+        {/* Insight Chips */}
+        <div className="relative z-10 flex flex-wrap gap-3 mt-8">
+          {insights.map((insight, i) => (
+            <span key={i} className="pill-chip">{insight}</span>
+          ))}
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* Metric Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {stats.map((stat, index) => (
-          <div key={index} className="group">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 hover:shadow-lg transition-all duration-300 card-gradient">
-              <div className="flex items-center justify-between mb-4">
-                <div className={`w-14 h-14 bg-gradient-to-br ${stat.color} rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300`}>
-                  <stat.icon size={24} className="text-white" />
-                </div>
-                <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 text-sm font-medium">
-                  <TrendingUp size={16} />
-                  {stat.trend}
-                </div>
-              </div>
-              <div>
-                <p className="text-slate-600 dark:text-slate-300 text-sm font-medium mb-1">
-                  {stat.label}
-                </p>
-                <p className="text-3xl font-bold text-slate-900 dark:text-white">
-                  {stat.value}
-                </p>
-              </div>
-            </div>
+          <div key={index} className="relative bg-card rounded-xl p-5 neon-border neon-border-hover card-hover cursor-default">
+            {stat.badge && (
+              <span className="absolute top-3 right-3 netflix-badge">{stat.badge}</span>
+            )}
+            <div className="text-4xl font-extrabold text-foreground mb-1">{stat.value}</div>
+            <div className="text-xs text-muted-foreground font-medium">{stat.label}</div>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Recent Activity */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 card-gradient">
-          <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-            <div className="flex items-center gap-3">
-              <Activity className="text-blue-600 dark:text-blue-400" size={24} />
-              <h3 className="text-xl font-semibold text-slate-900 dark:text-white">
-                Recent Activity
-              </h3>
-            </div>
-          </div>
-          <div className="p-6">
-            <div className="space-y-4">
-              {recentActivities.map((activity, index) => (
-                <div key={index} className="flex items-start gap-4 p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                  <div className="w-2 h-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full mt-2 flex-shrink-0"></div>
-                  <div className="flex-1">
-                    <p className="text-slate-900 dark:text-white font-medium">{activity.text}</p>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{activity.time}</p>
-                  </div>
+      {/* Featured Cohorts */}
+      <div>
+        <h2 className="text-2xl font-bold text-foreground mb-6">Featured Ready-to-Use Cohorts</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {cohortCategories.map((cat, index) => (
+            <div
+              key={index}
+              className="bg-card rounded-xl p-6 neon-border neon-border-hover card-hover flex flex-col justify-between"
+            >
+              <div>
+                <h3 className="text-xl font-bold text-foreground mb-1">{cat.title}</h3>
+                <p className="text-sm text-muted-foreground mb-4">{cat.subtitle}</p>
+                <div className="flex flex-wrap gap-2 mb-5">
+                  {cat.chips.map((chip, ci) => (
+                    <button
+                      key={ci}
+                      onClick={() => navigate('/segmentation/create')}
+                      className="pill-chip text-xs cursor-pointer"
+                    >
+                      {chip}
+                    </button>
+                  ))}
                 </div>
-              ))}
+              </div>
+
+              {/* Metadata Strip */}
+              <div className="border-t border-border pt-4 flex items-center justify-between">
+                <div className="flex gap-5 text-xs text-muted-foreground">
+                  <span>~<strong className="text-foreground">{cat.size}</strong> Reach</span>
+                  <span>Conversion: <strong className={cat.conversion === 'High' ? 'text-primary' : 'text-foreground'}>{cat.conversion}</strong></span>
+                  <span>Enrichment: <strong className={cat.enrichmentReady ? 'text-primary' : 'text-muted-foreground'}>{cat.enrichmentReady ? 'Ready' : 'Pending'}</strong></span>
+                </div>
+                <button
+                  onClick={() => navigate('/segmentation/create')}
+                  className="flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary/80 transition-colors"
+                >
+                  Explore Cohorts <ArrowRight size={14} />
+                </button>
+              </div>
             </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Activity */}
+        <div className="bg-card rounded-xl neon-border">
+          <div className="p-5 border-b border-border flex items-center gap-3">
+            <Activity className="text-primary" size={20} />
+            <h3 className="text-lg font-semibold text-foreground">Recent Activity</h3>
+          </div>
+          <div className="p-5 space-y-3">
+            {recentActivities.map((activity, index) => (
+              <div key={index} className="flex items-start gap-3 p-3 rounded-lg hover:bg-secondary/50 transition-colors">
+                <div className="w-2 h-2 bg-primary rounded-full mt-2 flex-shrink-0"></div>
+                <div className="flex-1">
+                  <p className="text-sm text-foreground">{activity.text}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{activity.time}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
         {/* Quick Actions */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 card-gradient">
-          <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-            <div className="flex items-center gap-3">
-              <BarChart3 className="text-purple-600 dark:text-purple-400" size={24} />
-              <h3 className="text-xl font-semibold text-slate-900 dark:text-white">
-                Quick Actions
-              </h3>
-            </div>
+        <div className="bg-card rounded-xl neon-border">
+          <div className="p-5 border-b border-border flex items-center gap-3">
+            <Target className="text-primary" size={20} />
+            <h3 className="text-lg font-semibold text-foreground">Quick Actions</h3>
           </div>
-          <div className="p-6">
-            <div className="space-y-4">
-              {quickActions.map((action, index) => (
-                <button key={index} className="w-full group">
-                  <div className="flex items-center gap-4 p-4 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-all duration-300 text-left">
-                    <div className={`w-12 h-12 bg-gradient-to-br ${action.gradient} rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300`}>
-                      <action.icon size={20} className="text-white" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="font-semibold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                        {action.title}
-                      </div>
-                      <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                        {action.description}
-                      </div>
-                    </div>
+          <div className="p-5 space-y-3">
+            {quickActions.map((action, index) => (
+              <button key={index} onClick={action.action} className="w-full group">
+                <div className="flex items-center gap-4 p-3 rounded-lg hover:bg-secondary/50 transition-all duration-200 text-left">
+                  <div className="w-10 h-10 bg-primary/15 border border-primary/30 rounded-lg flex items-center justify-center group-hover:bg-primary/25 transition-colors">
+                    <action.icon size={18} className="text-primary" />
                   </div>
-                </button>
-              ))}
-            </div>
+                  <div className="flex-1">
+                    <div className="font-medium text-foreground text-sm group-hover:text-primary transition-colors">{action.title}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{action.description}</div>
+                  </div>
+                  <ArrowRight size={14} className="text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                </div>
+              </button>
+            ))}
           </div>
         </div>
       </div>

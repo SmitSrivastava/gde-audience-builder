@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import netflixLogo from '@/assets/netflix-logo.png';
+import familyBusiness from '@/assets/family-business.jpeg';
 
 const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);

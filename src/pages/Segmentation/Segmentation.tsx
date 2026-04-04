@@ -1,12 +1,17 @@
 
 import React from 'react';
 import { Routes, Route, NavLink, useNavigate } from 'react-router-dom';
-import { Plus, List, ArrowRight, Edit } from 'lucide-react';
-import { allAudiences } from '@/data/audiences';
+import { Plus, List, Edit } from 'lucide-react';
+import { allAudiences, demoAudienceIds } from '@/data/audiences';
+import { useSavedAudiences } from '@/contexts/SavedAudiencesContext';
 import CreateAudience from './CreateAudience';
 
 const AudienceList = () => {
   const navigate = useNavigate();
+  const { savedAudiences } = useSavedAudiences();
+
+  const demoAudiences = allAudiences.filter(a => demoAudienceIds.includes(a.id) && a.status === 'Active');
+  const allDisplayed = [...demoAudiences, ...savedAudiences];
 
   return (
     <div className="space-y-6">
@@ -27,9 +32,14 @@ const AudienceList = () => {
               </tr>
             </thead>
             <tbody>
-              {allAudiences.filter(a => a.status === 'Active').slice(0, 8).map((audience) => (
+              {allDisplayed.map((audience) => (
                 <tr key={audience.id} className="border-b border-border hover:bg-secondary/30 transition-colors">
-                  <td className="py-4 font-medium text-foreground">{audience.name}</td>
+                  <td className="py-4">
+                    <button onClick={() => navigate(`/segmentation/create?audience=${audience.id}`)} className="text-left hover:text-primary transition-colors">
+                      <div className="font-medium text-foreground">{audience.name}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">Attributes: {audience.attributes.join(', ')}</div>
+                    </button>
+                  </td>
                   <td className="py-4 text-muted-foreground">{audience.size}</td>
                   <td className="py-4 text-muted-foreground">{audience.created}</td>
                   <td className="py-4">
@@ -45,20 +55,6 @@ const AudienceList = () => {
                       >
                         <Edit size={14} />
                         <span>Edit</span>
-                      </button>
-                      <button
-                        onClick={() => navigate(`/enrichment/audiences/${audience.id}`)}
-                        className="group flex items-center gap-1 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground text-sm rounded-lg transition-all font-medium"
-                      >
-                        <span>Enrich</span>
-                        <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
-                      </button>
-                      <button
-                        onClick={() => navigate(`/activation/audiences/${audience.id}`)}
-                        className="group flex items-center gap-1 px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-foreground text-sm rounded-lg transition-all font-medium border border-border"
-                      >
-                        <span>Activate</span>
-                        <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
                       </button>
                     </div>
                   </td>
@@ -89,32 +85,13 @@ const Segmentation = () => {
       </div>
 
       <div className="flex flex-wrap gap-4 border-b border-border">
-        <NavLink
-          to="/segmentation"
-          end
-          className={({ isActive }) =>
-            `flex items-center gap-2 px-6 py-3 rounded-t-xl font-medium transition-all duration-300 ${
-              isActive
-                ? 'bg-primary/15 text-primary border-b-2 border-primary'
-                : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
-            }`
-          }
-        >
-          <List size={20} />
-          Audience List
+        <NavLink to="/segmentation" end
+          className={({ isActive }) => `flex items-center gap-2 px-6 py-3 rounded-t-xl font-medium transition-all duration-300 ${isActive ? 'bg-primary/15 text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
+          <List size={20} /> Audience List
         </NavLink>
-        <NavLink
-          to="/segmentation/create"
-          className={({ isActive }) =>
-            `flex items-center gap-2 px-6 py-3 rounded-t-xl font-medium transition-all duration-300 ${
-              isActive
-                ? 'bg-primary/15 text-primary border-b-2 border-primary'
-                : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
-            }`
-          }
-        >
-          <Plus size={20} />
-          Create Audience
+        <NavLink to="/segmentation/create"
+          className={({ isActive }) => `flex items-center gap-2 px-6 py-3 rounded-t-xl font-medium transition-all duration-300 ${isActive ? 'bg-primary/15 text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
+          <Plus size={20} /> Create Audience
         </NavLink>
       </div>
 

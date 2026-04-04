@@ -1,63 +1,75 @@
 
 import React, { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { ChevronDown, ChevronUp, Plus, Play, Database, Users, Zap } from 'lucide-react';
+import { ChevronDown, ChevronUp, Play, Database, Users, Zap } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { allAudiences } from '@/data/audiences';
+import { useSavedAudiences } from '@/contexts/SavedAudiencesContext';
 
-interface ClientDataset { id: string; name: string; description: string; fields: string[]; recordCount: number; }
-interface FieldMapping { audienceField: string; clientField: string; matchType: 'exact' | 'fuzzy' | 'email_hash'; }
+interface FieldMapping { audienceField: string; clientField: string; matchType: 'exact'; }
 
 const EnrichAudience = () => {
   const { id } = useParams();
   const { toast } = useToast();
+  const { savedAudiences } = useSavedAudiences();
 
-  const matchedAudience = useMemo(() => allAudiences.find(a => a.id === id), [id]);
+  const matchedAudience = useMemo(() => {
+    return allAudiences.find(a => a.id === id) || savedAudiences.find(a => a.id === id);
+  }, [id, savedAudiences]);
+
   const audienceName = matchedAudience?.name || 'Selected Audience';
   const audienceSize = matchedAudience?.size || '~15M';
   const audienceSizeNum = matchedAudience?.sizeNum || 15000000;
+  const audienceAttributes = matchedAudience?.attributes || [];
 
   const [sqlCollapsed, setSqlCollapsed] = useState(true);
   const [selectedClientDatasets, setSelectedClientDatasets] = useState<string[]>([]);
   const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>([
-    { audienceField: 'device_id', clientField: 'device_identifier', matchType: 'exact' }
+    { audienceField: 'device_id', clientField: 'device_id', matchType: 'exact' }
   ]);
   const [enrichmentResults, setEnrichmentResults] = useState<any>(null);
   const [isEnriching, setIsEnriching] = useState(false);
+  const [saved, setSaved] = useState(false);
 
-  const clientDatasets: ClientDataset[] = [
-    { id: '1', name: 'Netflix Subscriber Data', description: 'Core subscriber profiles with viewing history and plan details', fields: ['device_identifier', 'subscriber_id', 'plan_type', 'viewing_hours', 'content_preferences'], recordCount: 28000000 },
-    { id: '2', name: 'Campaign Interaction Data', description: 'Ad exposure and conversion events across channels', fields: ['device_identifier', 'campaign_id', 'impression_date', 'conversion_event', 'channel'], recordCount: 45000000 },
-    { id: '3', name: 'App Engagement Data', description: 'Netflix app usage patterns and feature adoption', fields: ['device_identifier', 'session_id', 'feature_used', 'session_duration', 'app_version'], recordCount: 62000000 }
+  const clientDatasets = [
+    { id: '1', name: 'Netflix Subscriber Data', recordCount: 28000000 },
+    { id: '2', name: 'App Engagement Data', recordCount: 62000000 },
   ];
 
-  const audienceFields = ['device_id', 'hashed_email', 'phone_hash', 'user_id', 'household_id'];
-  const clientFields = ['device_identifier', 'subscriber_id', 'campaign_id', 'session_id'];
+  const fieldOptions = ['device_id', 'hashed_phone', 'hashed_email'];
 
   const handleClientDatasetToggle = (datasetId: string) => {
     setSelectedClientDatasets(prev => prev.includes(datasetId) ? prev.filter(i => i !== datasetId) : [...prev, datasetId]);
   };
-  const addFieldMapping = () => { setFieldMappings([...fieldMappings, { audienceField: 'device_id', clientField: 'device_identifier', matchType: 'exact' }]); };
-  const updateFieldMapping = (index: number, updates: Partial<FieldMapping>) => { setFieldMappings(fieldMappings.map((m, i) => i === index ? { ...m, ...updates } : m)); };
-  const removeFieldMapping = (index: number) => { setFieldMappings(fieldMappings.filter((_, i) => i !== index)); };
+  const updateFieldMapping = (index: number, updates: Partial<FieldMapping>) => {
+    setFieldMappings(fieldMappings.map((m, i) => i === index ? { ...m, ...updates } : m));
+  };
+
+  const overlapPercent = 55 + Math.random() * 5; // between 55-60, calculated once
+  const [storedOverlap] = useState(parseFloat(overlapPercent.toFixed(1)));
 
   const handleRunEnrichment = async () => {
     if (selectedClientDatasets.length === 0) { toast({ title: "Error", description: "Please select at least one client dataset to enrich", variant: "destructive" }); return; }
     setIsEnriching(true);
+    setSaved(false);
     setTimeout(() => {
-      const matchRate = 78 + Math.random() * 12;
-      const enrichedRecords = Math.floor(audienceSizeNum * (matchRate / 100));
+      const newDataPoints = 3 + Math.floor(Math.random() * 3); // 3-5
       setEnrichmentResults({
-        totalAudienceRecords: audienceSizeNum, matchedRecords: enrichedRecords,
-        matchRate: matchRate.toFixed(1), newFieldsAdded: 5, enrichedDatasets: selectedClientDatasets.length
+        totalAudienceRecords: audienceSizeNum,
+        netflixRecords: 28000000,
+        matchRate: storedOverlap,
+        newFieldsAdded: newDataPoints,
       });
       setIsEnriching(false);
-      toast({ title: "Enrichment Complete", description: `Successfully enriched ${(enrichedRecords / 1000000).toFixed(1)}M client records` });
     }, 2000);
   };
 
   const handleSaveEnrichedData = () => {
-    toast({ title: "Success", description: "Enriched client dataset saved successfully" });
+    if (!enrichmentResults) return;
+    const enrichedCount = Math.round(enrichmentResults.totalAudienceRecords * (enrichmentResults.matchRate / 100));
+    const enrichedInM = (enrichedCount / 1000000).toFixed(1);
+    setSaved(true);
+    toast({ title: "Success", description: `Successfully enriched ${enrichedInM}M records` });
   };
 
   return (
@@ -78,7 +90,7 @@ const EnrichAudience = () => {
           </div>
           <div className="flex-1">
             <h2 className="text-xl font-bold text-foreground">Source Audience: {audienceName}</h2>
-            <p className="text-sm text-muted-foreground">{audienceSize} records • Signals: {matchedAudience?.signals.join(', ')}</p>
+            <p className="text-sm text-muted-foreground">{audienceSize} records • Attributes: {audienceAttributes.join(', ')}</p>
           </div>
           <button onClick={() => setSqlCollapsed(!sqlCollapsed)} className="flex items-center gap-2 px-4 py-2 text-muted-foreground hover:bg-secondary rounded-lg transition-all">
             {sqlCollapsed ? 'Show Query' : 'Hide Query'} {sqlCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
@@ -104,17 +116,11 @@ const EnrichAudience = () => {
         </div>
         <div className="grid gap-4">
           {clientDatasets.map(dataset => (
-            <label key={dataset.id} className="group flex items-start gap-4 p-5 rounded-xl border border-border hover:border-primary/30 cursor-pointer transition-all hover:bg-secondary/30">
-              <input type="checkbox" checked={selectedClientDatasets.includes(dataset.id)} onChange={() => handleClientDatasetToggle(dataset.id)} className="w-5 h-5 mt-1 accent-[hsl(0,85%,50%)]" />
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                  <h4 className="font-semibold text-foreground">{dataset.name}</h4>
-                  <span className="px-3 py-1 bg-primary/10 text-primary text-sm rounded-full font-medium border border-primary/20">{(dataset.recordCount / 1000000).toFixed(0)}M records</span>
-                </div>
-                <p className="text-sm text-muted-foreground mb-3">{dataset.description}</p>
-                <div className="flex flex-wrap gap-2">
-                  {dataset.fields.map(field => <span key={field} className="px-2 py-1 bg-secondary text-xs text-muted-foreground rounded font-mono">{field}</span>)}
-                </div>
+            <label key={dataset.id} className="group flex items-center gap-4 p-5 rounded-xl border border-border hover:border-primary/30 cursor-pointer transition-all hover:bg-secondary/30">
+              <input type="checkbox" checked={selectedClientDatasets.includes(dataset.id)} onChange={() => handleClientDatasetToggle(dataset.id)} className="w-5 h-5 accent-[hsl(0,85%,50%)]" />
+              <div className="flex items-center gap-3 flex-1">
+                <h4 className="font-semibold text-foreground">{dataset.name}</h4>
+                <span className="px-3 py-1 bg-primary/10 text-primary text-sm rounded-full font-medium border border-primary/20">{(dataset.recordCount / 1000000).toFixed(0)}M records</span>
               </div>
             </label>
           ))}
@@ -124,47 +130,37 @@ const EnrichAudience = () => {
       {/* Field Mapping */}
       {selectedClientDatasets.length > 0 && (
         <div className="bg-card rounded-xl p-6 neon-border">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-primary/15 border border-primary/30 rounded-lg flex items-center justify-center">
-                <Zap className="text-primary" size={20} />
-              </div>
-              <h3 className="text-xl font-bold text-foreground">Configure Field Mapping</h3>
+          <div className="flex items-center gap-4 mb-6">
+            <div className="w-10 h-10 bg-primary/15 border border-primary/30 rounded-lg flex items-center justify-center">
+              <Zap className="text-primary" size={20} />
             </div>
-            <button onClick={addFieldMapping} className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg font-medium transition-all">
-              <Plus size={16} /> Add Mapping
-            </button>
+            <h3 className="text-xl font-bold text-foreground">Configure Field Mapping</h3>
           </div>
           <div className="space-y-4">
             {fieldMappings.map((mapping, index) => (
               <div key={index} className="flex items-center gap-4 p-4 bg-secondary/30 rounded-lg">
-                <div className="flex-1 grid grid-cols-4 gap-3">
+                <div className="flex-1 grid grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-muted-foreground mb-1">Audience Field</label>
                     <select value={mapping.audienceField} onChange={(e) => updateFieldMapping(index, { audienceField: e.target.value })}
                       className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground">
-                      {audienceFields.map(f => <option key={f} value={f}>{f}</option>)}
+                      {fieldOptions.map(f => <option key={f} value={f}>{f}</option>)}
                     </select>
-                  </div>
-                  <div className="flex items-center justify-center">
-                    <div className="w-8 h-8 bg-primary/20 border border-primary/30 rounded-full flex items-center justify-center"><span className="text-primary text-sm">→</span></div>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-muted-foreground mb-1">Client Field</label>
                     <select value={mapping.clientField} onChange={(e) => updateFieldMapping(index, { clientField: e.target.value })}
                       className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground">
-                      {clientFields.map(f => <option key={f} value={f}>{f}</option>)}
+                      {fieldOptions.map(f => <option key={f} value={f}>{f}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-muted-foreground mb-1">Match Type</label>
-                    <select value={mapping.matchType} onChange={(e) => updateFieldMapping(index, { matchType: e.target.value as any })}
-                      className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground">
-                      <option value="exact">Exact Match</option><option value="fuzzy">Fuzzy Match</option><option value="email_hash">Email Hash</option>
+                    <select value={mapping.matchType} className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground" disabled>
+                      <option value="exact">Exact Match</option>
                     </select>
                   </div>
                 </div>
-                <button onClick={() => removeFieldMapping(index)} className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors">×</button>
               </div>
             ))}
           </div>
@@ -187,8 +183,8 @@ const EnrichAudience = () => {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
               {[
                 { label: 'Audience Records', value: `${(enrichmentResults.totalAudienceRecords / 1000000).toFixed(1)}M` },
-                { label: 'Client Records Enriched', value: `${(enrichmentResults.matchedRecords / 1000000).toFixed(1)}M` },
-                { label: 'Match Rate', value: `${enrichmentResults.matchRate}%` },
+                { label: 'Netflix Records', value: `${(enrichmentResults.netflixRecords / 1000000).toFixed(1)}M` },
+                { label: 'Overlap / Match Rate', value: `${enrichmentResults.matchRate}%` },
                 { label: 'New Data Points', value: enrichmentResults.newFieldsAdded },
               ].map((item, i) => (
                 <div key={i} className="text-center">
@@ -208,8 +204,8 @@ const EnrichAudience = () => {
               <h3 className="text-xl font-bold text-foreground">Save Enriched Client Data</h3>
               <p className="text-sm text-muted-foreground mt-1">Create an enriched version of your client datasets with audience insights</p>
             </div>
-            <button onClick={handleSaveEnrichedData} className="px-6 py-3 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg font-medium transition-colors">
-              Save Enriched Data
+            <button onClick={handleSaveEnrichedData} disabled={saved} className={`px-6 py-3 rounded-lg font-medium transition-colors ${saved ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary/90 text-primary-foreground'}`}>
+              {saved ? 'Saved ✓' : 'Save Enriched Data'}
             </button>
           </div>
         </div>

@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Sparkles, Target, Activity, ArrowRight, ChevronDown, ChevronUp, Database } from 'lucide-react';
 import { cohortCategories } from '@/data/audiences';
+import { useSavedAudiences } from '@/contexts/SavedAudiencesContext';
 import netflixLogo from '@/assets/netflix-logo.png';
 
 const platformIcons: Record<string, string> = {
@@ -15,6 +16,7 @@ const platformIcons: Record<string, string> = {
 const Dashboard = () => {
   const navigate = useNavigate();
   const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
+  const { savedAudiences } = useSavedAudiences();
 
   const toggleCategory = (id: string) => {
     setExpandedCategories(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
@@ -54,7 +56,6 @@ const Dashboard = () => {
       <div className="hero-gradient rounded-2xl p-10 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-[hsl(0_85%_50%/0.08)] rounded-full blur-[100px]"></div>
         <div className="absolute bottom-0 left-1/3 w-64 h-64 bg-[hsl(0_85%_30%/0.06)] rounded-full blur-[80px]"></div>
-        {/* Netflix N watermark */}
         <div className="absolute top-1/2 right-12 -translate-y-1/2 opacity-[0.06]">
           <img src={netflixLogo} alt="" className="h-48 object-contain" aria-hidden="true" />
         </div>
@@ -97,7 +98,6 @@ const Dashboard = () => {
             const isExpanded = expandedCategories.includes(cat.id);
             return (
               <div key={cat.id} className="bg-card rounded-xl neon-border neon-border-hover card-hover overflow-hidden">
-                {/* Category Header */}
                 <button
                   onClick={() => toggleCategory(cat.id)}
                   className="w-full flex items-center justify-between p-6 text-left hover:bg-secondary/20 transition-colors"
@@ -115,7 +115,6 @@ const Dashboard = () => {
                   </div>
                 </button>
 
-                {/* Expanded Sub-audiences */}
                 {isExpanded && (
                   <div className="border-t border-border">
                     {cat.subAudiences.map((sub) => (
@@ -127,6 +126,7 @@ const Dashboard = () => {
                           >
                             {sub.name}
                           </button>
+                          <div className="text-xs text-muted-foreground mt-0.5">Attributes: {sub.attributes.join(', ')}</div>
                           <div className="flex items-center gap-3 mt-1.5">
                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                               sub.enrichmentStatus === 'Ready' ? 'bg-primary/15 text-primary border border-primary/30' : 'bg-secondary text-muted-foreground'
@@ -166,6 +166,33 @@ const Dashboard = () => {
               </div>
             );
           })}
+
+          {/* Show saved audiences if any */}
+          {savedAudiences.length > 0 && (
+            <div className="bg-card rounded-xl neon-border overflow-hidden">
+              <div className="p-6">
+                <h3 className="text-xl font-bold text-foreground">Custom Audiences</h3>
+                <p className="text-sm text-muted-foreground mt-1">Audiences created during this session</p>
+              </div>
+              <div className="border-t border-border">
+                {savedAudiences.map((sub) => (
+                  <div key={sub.id} className="flex items-center justify-between px-6 py-4 border-b border-border/50 last:border-b-0 hover:bg-secondary/20 transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <button onClick={() => navigate(`/segmentation/create?audience=${sub.id}`)} className="text-foreground font-medium hover:text-primary transition-colors text-left">{sub.name}</button>
+                      <div className="text-xs text-muted-foreground mt-0.5">Attributes: {sub.attributes.join(', ')}</div>
+                    </div>
+                    <div className="flex items-center gap-6">
+                      <div className="text-lg font-bold text-foreground">{sub.size}</div>
+                      <div className="flex gap-2">
+                        <button onClick={() => navigate(`/enrichment/audiences/${sub.id}`)} className="px-3 py-1.5 bg-primary/15 text-primary text-xs font-medium rounded-lg border border-primary/30 hover:bg-primary/25 transition-colors">Enrich</button>
+                        <button onClick={() => navigate(`/activation/audiences/${sub.id}`)} className="px-3 py-1.5 bg-secondary text-foreground text-xs font-medium rounded-lg border border-border hover:bg-secondary/80 transition-colors">Activate</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

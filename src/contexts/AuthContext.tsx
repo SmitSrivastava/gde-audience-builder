@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 
 interface AuthContextType {
   role: 'Admin' | 'Data Strategist' | 'Activation Ops';
@@ -15,11 +15,10 @@ interface AuthProviderProps {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  // Mock auth data - in real app this would come from API
   const [authData] = useState<AuthContextType>({
     role: 'Admin',
     clientId: null,
-    userName: 'John Smith',
+    userName: 'Smit Srivastava',
     clientName: null
   });
 

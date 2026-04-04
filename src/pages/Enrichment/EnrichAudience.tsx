@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { ChevronDown, ChevronUp, Plus, Play, Database, Users, Zap } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { allAudiences } from '@/data/audiences';
 
 interface ClientDataset { id: string; name: string; description: string; fields: string[]; recordCount: number; }
 interface FieldMapping { audienceField: string; clientField: string; matchType: 'exact' | 'fuzzy' | 'email_hash'; }
@@ -10,34 +11,33 @@ interface FieldMapping { audienceField: string; clientField: string; matchType: 
 const EnrichAudience = () => {
   const { id } = useParams();
   const { toast } = useToast();
-  
-  const [audience] = useState({
-    id, name: 'High-Value Shoppers', rowCount: 15420,
-    sql: 'SELECT * FROM partner_data WHERE purchase_amount > 500 AND engagement_score > 0.8',
-    partnerDatasets: ['Customer Purchase History', 'Engagement Metrics']
-  });
+
+  const matchedAudience = useMemo(() => allAudiences.find(a => a.id === id), [id]);
+  const audienceName = matchedAudience?.name || 'Selected Audience';
+  const audienceSize = matchedAudience?.size || '~15M';
+  const audienceSizeNum = matchedAudience?.sizeNum || 15000000;
 
   const [sqlCollapsed, setSqlCollapsed] = useState(true);
   const [selectedClientDatasets, setSelectedClientDatasets] = useState<string[]>([]);
   const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>([
-    { audienceField: 'email', clientField: 'email_address', matchType: 'exact' }
+    { audienceField: 'device_id', clientField: 'device_identifier', matchType: 'exact' }
   ]);
   const [enrichmentResults, setEnrichmentResults] = useState<any>(null);
   const [isEnriching, setIsEnriching] = useState(false);
 
   const clientDatasets: ClientDataset[] = [
-    { id: '1', name: 'Customer Master Data', description: 'Core customer information including demographics and contact details', fields: ['email_address', 'customer_id', 'first_name', 'last_name', 'phone', 'address'], recordCount: 50000 },
-    { id: '2', name: 'Transaction History', description: 'Historical purchase and transaction data', fields: ['email_address', 'transaction_id', 'purchase_date', 'amount', 'product_category'], recordCount: 150000 },
-    { id: '3', name: 'Digital Interactions', description: 'Website and app engagement data', fields: ['email_address', 'session_id', 'page_views', 'time_spent', 'conversion_events'], recordCount: 200000 }
+    { id: '1', name: 'Netflix Subscriber Data', description: 'Core subscriber profiles with viewing history and plan details', fields: ['device_identifier', 'subscriber_id', 'plan_type', 'viewing_hours', 'content_preferences'], recordCount: 28000000 },
+    { id: '2', name: 'Campaign Interaction Data', description: 'Ad exposure and conversion events across channels', fields: ['device_identifier', 'campaign_id', 'impression_date', 'conversion_event', 'channel'], recordCount: 45000000 },
+    { id: '3', name: 'App Engagement Data', description: 'Netflix app usage patterns and feature adoption', fields: ['device_identifier', 'session_id', 'feature_used', 'session_duration', 'app_version'], recordCount: 62000000 }
   ];
 
-  const audienceFields = ['email', 'customer_id', 'phone', 'user_id', 'device_id'];
-  const clientFields = ['email_address', 'customer_id', 'phone', 'first_name', 'last_name', 'transaction_id'];
+  const audienceFields = ['device_id', 'hashed_email', 'phone_hash', 'user_id', 'household_id'];
+  const clientFields = ['device_identifier', 'subscriber_id', 'campaign_id', 'session_id'];
 
   const handleClientDatasetToggle = (datasetId: string) => {
     setSelectedClientDatasets(prev => prev.includes(datasetId) ? prev.filter(i => i !== datasetId) : [...prev, datasetId]);
   };
-  const addFieldMapping = () => { setFieldMappings([...fieldMappings, { audienceField: 'email', clientField: 'email_address', matchType: 'exact' }]); };
+  const addFieldMapping = () => { setFieldMappings([...fieldMappings, { audienceField: 'device_id', clientField: 'device_identifier', matchType: 'exact' }]); };
   const updateFieldMapping = (index: number, updates: Partial<FieldMapping>) => { setFieldMappings(fieldMappings.map((m, i) => i === index ? { ...m, ...updates } : m)); };
   const removeFieldMapping = (index: number) => { setFieldMappings(fieldMappings.filter((_, i) => i !== index)); };
 
@@ -45,13 +45,14 @@ const EnrichAudience = () => {
     if (selectedClientDatasets.length === 0) { toast({ title: "Error", description: "Please select at least one client dataset to enrich", variant: "destructive" }); return; }
     setIsEnriching(true);
     setTimeout(() => {
-      const enrichedRecords = Math.floor(audience.rowCount * 0.85);
+      const matchRate = 78 + Math.random() * 12;
+      const enrichedRecords = Math.floor(audienceSizeNum * (matchRate / 100));
       setEnrichmentResults({
-        totalAudienceRecords: audience.rowCount, matchedRecords: enrichedRecords,
-        matchRate: ((enrichedRecords / audience.rowCount) * 100).toFixed(1), newFieldsAdded: 5, enrichedDatasets: selectedClientDatasets.length
+        totalAudienceRecords: audienceSizeNum, matchedRecords: enrichedRecords,
+        matchRate: matchRate.toFixed(1), newFieldsAdded: 5, enrichedDatasets: selectedClientDatasets.length
       });
       setIsEnriching(false);
-      toast({ title: "Enrichment Complete", description: `Successfully enriched ${enrichedRecords.toLocaleString()} client records` });
+      toast({ title: "Enrichment Complete", description: `Successfully enriched ${(enrichedRecords / 1000000).toFixed(1)}M client records` });
     }, 2000);
   };
 
@@ -76,8 +77,8 @@ const EnrichAudience = () => {
             <Users className="text-primary" size={20} />
           </div>
           <div className="flex-1">
-            <h2 className="text-xl font-bold text-foreground">Source Audience: {audience.name}</h2>
-            <p className="text-sm text-muted-foreground">{audience.rowCount.toLocaleString()} records from: {audience.partnerDatasets.join(', ')}</p>
+            <h2 className="text-xl font-bold text-foreground">Source Audience: {audienceName}</h2>
+            <p className="text-sm text-muted-foreground">{audienceSize} records • Signals: {matchedAudience?.signals.join(', ')}</p>
           </div>
           <button onClick={() => setSqlCollapsed(!sqlCollapsed)} className="flex items-center gap-2 px-4 py-2 text-muted-foreground hover:bg-secondary rounded-lg transition-all">
             {sqlCollapsed ? 'Show Query' : 'Hide Query'} {sqlCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
@@ -85,7 +86,7 @@ const EnrichAudience = () => {
         </div>
         {!sqlCollapsed && (
           <div className="bg-background rounded-lg p-4 border border-border">
-            <pre className="text-sm text-primary font-mono overflow-x-auto">{audience.sql}</pre>
+            <pre className="text-sm text-primary font-mono overflow-x-auto">SELECT user_id, demographic_segment, ott_profile{'\n'}FROM audience_data{'\n'}WHERE audience_segment = '{audienceName}'</pre>
           </div>
         )}
       </div>
@@ -108,7 +109,7 @@ const EnrichAudience = () => {
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
                   <h4 className="font-semibold text-foreground">{dataset.name}</h4>
-                  <span className="px-3 py-1 bg-primary/10 text-primary text-sm rounded-full font-medium border border-primary/20">{dataset.recordCount.toLocaleString()} records</span>
+                  <span className="px-3 py-1 bg-primary/10 text-primary text-sm rounded-full font-medium border border-primary/20">{(dataset.recordCount / 1000000).toFixed(0)}M records</span>
                 </div>
                 <p className="text-sm text-muted-foreground mb-3">{dataset.description}</p>
                 <div className="flex flex-wrap gap-2">
@@ -185,8 +186,8 @@ const EnrichAudience = () => {
           <div className="p-6 bg-primary/5 border border-primary/20 rounded-xl">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
               {[
-                { label: 'Audience Records', value: enrichmentResults.totalAudienceRecords.toLocaleString() },
-                { label: 'Client Records Enriched', value: enrichmentResults.matchedRecords.toLocaleString() },
+                { label: 'Audience Records', value: `${(enrichmentResults.totalAudienceRecords / 1000000).toFixed(1)}M` },
+                { label: 'Client Records Enriched', value: `${(enrichmentResults.matchedRecords / 1000000).toFixed(1)}M` },
                 { label: 'Match Rate', value: `${enrichmentResults.matchRate}%` },
                 { label: 'New Data Points', value: enrichmentResults.newFieldsAdded },
               ].map((item, i) => (
@@ -200,7 +201,6 @@ const EnrichAudience = () => {
         )}
       </div>
 
-      {/* Save */}
       {enrichmentResults && (
         <div className="bg-card rounded-xl p-6 neon-border">
           <div className="flex items-center justify-between">

@@ -2,16 +2,11 @@
 import React from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import { Target, ArrowRight } from 'lucide-react';
+import { allAudiences } from '@/data/audiences';
 import ActivateAudience from './Activation/ActivateAudience';
 
 const ActivationHome = () => {
   const navigate = useNavigate();
-  
-  const audiences = [
-    { id: '1', name: 'High-Value Shoppers', created: '2024-01-15', count: 15420, status: 'Active', enriched: true },
-    { id: '2', name: 'Mobile App Users', created: '2024-01-14', count: 8932, status: 'Active', enriched: true },
-    { id: '3', name: 'Email Subscribers', created: '2024-01-13', count: 25670, status: 'Processing', enriched: false }
-  ];
 
   return (
     <div className="space-y-8">
@@ -38,25 +33,22 @@ const ActivationHome = () => {
             <thead>
               <tr className="border-b border-border">
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Audience Name</th>
-                <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Created</th>
-                <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Records</th>
+                <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Size</th>
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Status</th>
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Enriched</th>
+                <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Platforms</th>
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Action</th>
               </tr>
             </thead>
             <tbody>
-              {audiences.map((audience) => (
+              {allAudiences.filter(a => a.status === 'Active').slice(0, 8).map((audience) => (
                 <tr key={audience.id} className="border-b border-border hover:bg-secondary/30 transition-colors">
                   <td className="py-4 font-medium text-foreground">{audience.name}</td>
-                  <td className="py-4 text-muted-foreground">{audience.created}</td>
-                  <td className="py-4 text-muted-foreground">{audience.count.toLocaleString()}</td>
+                  <td className="py-4 text-muted-foreground">{audience.size}</td>
                   <td className="py-4">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      audience.status === 'Active'
-                        ? 'bg-primary/15 text-primary border border-primary/30'
-                        : 'bg-secondary text-muted-foreground'
-                    }`}>{audience.status}</span>
+                    <span className="px-3 py-1 rounded-full text-xs font-medium bg-primary/15 text-primary border border-primary/30">
+                      {audience.status}
+                    </span>
                   </td>
                   <td className="py-4">
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -66,17 +58,19 @@ const ActivationHome = () => {
                     }`}>{audience.enriched ? 'Enriched' : 'Not Enriched'}</span>
                   </td>
                   <td className="py-4">
+                    <div className="flex gap-1">
+                      {audience.activationPlatforms.map(p => (
+                        <span key={p} className="px-2 py-0.5 bg-secondary text-xs text-muted-foreground rounded">{p}</span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="py-4">
                     <button
                       onClick={() => navigate(`/activation/audiences/${audience.id}`)}
-                      disabled={!audience.enriched}
-                      className={`group flex items-center gap-2 px-4 py-2 text-sm rounded-lg font-medium transition-all ${
-                        audience.enriched
-                          ? 'bg-primary hover:bg-primary/90 text-primary-foreground'
-                          : 'bg-muted text-muted-foreground cursor-not-allowed'
-                      }`}
+                      className="group flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground text-sm rounded-lg font-medium transition-all"
                     >
                       <span>Activate</span>
-                      {audience.enriched && <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />}
+                      <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
                     </button>
                   </td>
                 </tr>

@@ -1,17 +1,12 @@
 
 import React from 'react';
 import { Routes, Route, NavLink, useNavigate } from 'react-router-dom';
-import { Plus, List, ArrowRight } from 'lucide-react';
+import { Plus, List, ArrowRight, Edit } from 'lucide-react';
+import { allAudiences } from '@/data/audiences';
 import CreateAudience from './CreateAudience';
 
 const AudienceList = () => {
   const navigate = useNavigate();
-  
-  const audiences = [
-    { id: '1', name: 'High-Value Shoppers', created: '2024-01-15', count: 15420, status: 'Active' },
-    { id: '2', name: 'Mobile App Users', created: '2024-01-14', count: 8932, status: 'Active' },
-    { id: '3', name: 'Email Subscribers', created: '2024-01-13', count: 25670, status: 'Processing' }
-  ];
 
   return (
     <div className="space-y-6">
@@ -25,27 +20,32 @@ const AudienceList = () => {
             <thead>
               <tr className="border-b border-border">
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Name</th>
+                <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Size</th>
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Created</th>
-                <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Count</th>
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Status</th>
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {audiences.map((audience) => (
+              {allAudiences.filter(a => a.status === 'Active').slice(0, 8).map((audience) => (
                 <tr key={audience.id} className="border-b border-border hover:bg-secondary/30 transition-colors">
                   <td className="py-4 font-medium text-foreground">{audience.name}</td>
+                  <td className="py-4 text-muted-foreground">{audience.size}</td>
                   <td className="py-4 text-muted-foreground">{audience.created}</td>
-                  <td className="py-4 text-muted-foreground">{audience.count.toLocaleString()}</td>
                   <td className="py-4">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      audience.status === 'Active'
-                        ? 'bg-primary/15 text-primary border border-primary/30'
-                        : 'bg-secondary text-muted-foreground'
-                    }`}>{audience.status}</span>
+                    <span className="px-3 py-1 rounded-full text-xs font-medium bg-primary/15 text-primary border border-primary/30">
+                      {audience.status}
+                    </span>
                   </td>
                   <td className="py-4">
                     <div className="flex gap-2">
+                      <button
+                        onClick={() => navigate(`/segmentation/create?audience=${audience.id}`)}
+                        className="group flex items-center gap-1 px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-foreground text-sm rounded-lg transition-all font-medium border border-border"
+                      >
+                        <Edit size={14} />
+                        <span>Edit</span>
+                      </button>
                       <button
                         onClick={() => navigate(`/enrichment/audiences/${audience.id}`)}
                         className="group flex items-center gap-1 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground text-sm rounded-lg transition-all font-medium"

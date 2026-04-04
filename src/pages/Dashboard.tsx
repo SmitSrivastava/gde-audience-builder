@@ -6,12 +6,6 @@ import { cohortCategories } from '@/data/audiences';
 import { useSavedAudiences } from '@/contexts/SavedAudiencesContext';
 import netflixLogo from '@/assets/netflix-logo.png';
 
-const platformIcons: Record<string, string> = {
-  'Meta': '📘',
-  'Google': '🎯',
-  'DV360': '📊',
-  'YouTube': '▶️',
-};
 
 const Dashboard = () => {
   const navigate = useNavigate();

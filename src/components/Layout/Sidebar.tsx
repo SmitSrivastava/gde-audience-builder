@@ -47,7 +47,7 @@ const Sidebar = () => {
         </div>
       </div>
 
-      <nav className="flex-1 p-4">
+      <nav className="p-4">
         <ul className="space-y-2">
           {navItems.map((item) => (
             <li key={item.path}>
@@ -69,14 +69,14 @@ const Sidebar = () => {
         </ul>
       </nav>
 
-      {/* Family Business Show image at bottom */}
+      {/* Family Business Show image right after nav */}
       {!collapsed && (
-        <div className="mt-auto p-3">
+        <div className="p-3 mt-2">
           <img
             src={familyBusiness}
             alt="Family Business"
             className="w-full rounded-xl opacity-30 object-cover"
-            style={{ maxHeight: '280px' }}
+            style={{ maxHeight: '260px' }}
           />
         </div>
       )}

@@ -5,6 +5,10 @@ import { CheckCircle, User } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { allAudiences } from '@/data/audiences';
 import { useSavedAudiences } from '@/contexts/SavedAudiencesContext';
+import metaLogo from '@/assets/meta-logo.png';
+import dv360Logo from '@/assets/dv360-logo.png';
+import googleAdsLogo from '@/assets/google-ads-logo.png';
+import ttdLogo from '@/assets/ttd-logo.png';
 
 const maskId = (id: string) => {
   if (id.length <= 3) return id;

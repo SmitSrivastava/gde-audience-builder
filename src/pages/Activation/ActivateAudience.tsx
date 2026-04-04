@@ -118,7 +118,7 @@ const ActivateAudience = () => {
             <button key={platform.id} onClick={() => handleSelectPlatform(platform.id)}
               className={`p-4 rounded-xl border text-left transition-all ${selectedPlatform === platform.id ? 'border-primary/50 bg-primary/10' : 'border-border hover:border-primary/30 hover:bg-secondary/30'}`}>
               <div className="flex items-center gap-3">
-                <span className="text-2xl">{platform.logo}</span>
+                <img src={platform.logo} alt={platform.name} className="w-8 h-8 object-contain" />
                 <div>
                   <div className="font-medium text-foreground">{platform.name}</div>
                   <div className="text-sm text-muted-foreground">{platform.description}</div>

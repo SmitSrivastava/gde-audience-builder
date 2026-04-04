@@ -68,6 +68,18 @@ const Sidebar = () => {
           ))}
         </ul>
       </nav>
+
+      {/* Family Business Show image at bottom */}
+      {!collapsed && (
+        <div className="mt-auto p-3">
+          <img
+            src={familyBusiness}
+            alt="Family Business"
+            className="w-full rounded-xl opacity-30 object-cover"
+            style={{ maxHeight: '280px' }}
+          />
+        </div>
+      )}
     </div>
   );
 };

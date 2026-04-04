@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Play, Code, Plus, Trash2, Info, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { allAudiences, audienceQueryConfigs, defaultQueryConfig } from '@/data/audiences';
+import { allAudiences, audienceQueryConfigs, defaultQueryConfig, ALL_PARTNERS, fieldToPartners } from '@/data/audiences';
 import { useSavedAudiences } from '@/contexts/SavedAudiencesContext';
 
 interface QueryRule { id: string; field: string; operator: string; value: string; logic: 'AND' | 'OR'; }
@@ -18,7 +18,8 @@ const ALL_FIELDS = [
 const PROFESSION_VALUES = [
   'Entrepreneurs', 'Consultants', 'Finance Professionals', 'MBA Graduates',
   'Family Business Owners', 'Startup Founders', 'Senior Corporate Executives',
-  'SME Business Owners', 'Investment Professionals', 'Chartered Accountants'
+  'SME Business Owners', 'Investment Professionals', 'Chartered Accountants',
+  'Teachers', 'Engineers', 'Doctors', 'Govt Employee', 'Bank Employee'
 ];
 
 const GENRE_VALUES = [
@@ -28,35 +29,129 @@ const GENRE_VALUES = [
 
 const OPERATORS = ['=', '!=', '>', '<', '>=', '<=', 'IN', 'NOT IN', 'BETWEEN', 'CONTAINS'];
 
-const ALL_PARTNERS = [
-  'Telco Data Provider', 'OTT App Analytics', 'Device Intelligence Corp',
-  'Financial Proxy Signals', 'Content Affinity Engine', 'Engagement Depth Platform',
-  'Professional Data Partner', 'Geo Intelligence Partner'
-];
+const MultiSelectDropdown = ({ options, selected, onChange, placeholder }: { options: string[]; selected: string[]; onChange: (v: string[]) => void; placeholder: string }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const toggle = (val: string) => {
+    onChange(selected.includes(val) ? selected.filter(x => x !== val) : [...selected, val]);
+  };
+
+  return (
+    <div ref={ref} className="relative flex-1 min-w-[200px]">
+      <button type="button" onClick={() => setOpen(!open)}
+        className="w-full px-3 py-2 bg-card border border-border rounded-lg text-sm text-foreground text-left flex items-center justify-between">
+        <span className={selected.length ? 'text-foreground' : 'text-muted-foreground'}>
+          {selected.length ? `${selected.length} selected` : placeholder}
+        </span>
+        <span className="text-muted-foreground text-xs">▼</span>
+      </button>
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {selected.map(s => (
+            <span key={s} className="px-2 py-0.5 rounded text-xs bg-primary/15 text-primary border border-primary/30">{s}</span>
+          ))}
+        </div>
+      )}
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-card border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          {options.map(opt => (
+            <label key={opt} className="flex items-center gap-2 px-3 py-2 hover:bg-secondary/50 cursor-pointer text-sm text-foreground">
+              <input type="checkbox" checked={selected.includes(opt)} onChange={() => toggle(opt)} className="accent-[hsl(0,85%,50%)]" />
+              {opt}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const CreateAudience = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
   const audienceId = searchParams.get('audience');
-  const { addAudience } = useSavedAudiences();
+  const { addAudience, savedAudiences } = useSavedAudiences();
 
-  const matchedAudience = useMemo(() => allAudiences.find(a => a.id === audienceId), [audienceId]);
-  const queryConfig = useMemo(() => (audienceId && audienceQueryConfigs[audienceId]) || defaultQueryConfig, [audienceId]);
+  // Check saved audiences too
+  const matchedAudience = useMemo(() => {
+    return allAudiences.find(a => a.id === audienceId) || savedAudiences.find(a => a.id === audienceId);
+  }, [audienceId, savedAudiences]);
 
-  const [selectedPartners] = useState<string[]>(queryConfig.dataPartners);
+  // If saved audience has stored queryRules, use those; otherwise fall back to config
+  const queryConfig = useMemo(() => {
+    if (matchedAudience?.queryRules) {
+      // Build from stored rules
+      return {
+        dataPartners: defaultQueryConfig.dataPartners,
+        conditions: matchedAudience.queryRules,
+        sql: '',
+      };
+    }
+    return (audienceId && audienceQueryConfigs[audienceId]) || defaultQueryConfig;
+  }, [audienceId, matchedAudience]);
+
   const [queryRules, setQueryRules] = useState<QueryRule[]>(
-    queryConfig.conditions.map((c, i) => ({ id: String(i + 1), field: c.field, operator: c.operator, value: c.value, logic: 'AND' as const }))
+    queryConfig.conditions.map((c, i) => ({ id: String(i + 1), field: c.field, operator: c.operator, value: c.value, logic: c.logic || 'AND' as const }))
   );
-  const [sqlQuery, setSqlQuery] = useState(queryConfig.sql);
+
+  // Derive highlighted partners from fields used in query rules
+  const highlightedPartners = useMemo(() => {
+    const partners = new Set<string>();
+    queryRules.forEach(r => {
+      if (r.field && fieldToPartners[r.field]) {
+        fieldToPartners[r.field].forEach(p => partners.add(p));
+      }
+    });
+    return partners;
+  }, [queryRules]);
+
+  // Generate SQL from query rules
+  const sqlQuery = useMemo(() => {
+    if (queryRules.length === 0) return 'SELECT user_id FROM audience_data';
+    const conditions = queryRules.filter(r => r.field && r.operator && r.value).map((r, i) => {
+      const prefix = i === 0 ? 'WHERE' : `  ${r.logic}`;
+      const field = r.field.toLowerCase().replace(/\s+/g, '_');
+      if (r.operator === 'IN' || r.operator === 'NOT IN') {
+        const vals = r.value.split(',').map(v => `'${v.trim()}'`).join(', ');
+        return `${prefix} ${field} ${r.operator} (${vals})`;
+      }
+      if (r.operator === 'BETWEEN') {
+        const parts = r.value.split('-').map(v => v.trim());
+        return `${prefix} ${field} BETWEEN ${parts[0]} AND ${parts[1] || parts[0]}`;
+      }
+      if (r.operator === 'CONTAINS') {
+        const vals = r.value.split(',').map(v => `'${v.trim()}'`).join(', ');
+        return `${prefix} ${field} IN (${vals})`;
+      }
+      return `${prefix} ${field} ${r.operator} '${r.value}'`;
+    });
+    return `SELECT user_id, demographic_segment, ott_profile, device_info\nFROM telco_data t\nJOIN ott_analytics o ON t.device_id = o.device_id\nJOIN device_intel d ON t.device_id = d.device_id\n${conditions.join('\n')}`;
+  }, [queryRules]);
+
   const [audienceName, setAudienceName] = useState(matchedAudience?.name || '');
   const [isCreating, setIsCreating] = useState(false);
   const [queryRun, setQueryRun] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [resultSize, setResultSize] = useState('14.2M');
+  const [resultSizeNum, setResultSizeNum] = useState(14200000);
 
   useEffect(() => {
     if (matchedAudience) {
       setAudienceName(matchedAudience.name);
+      // If a saved audience with queryRules, reload them
+      if (matchedAudience.queryRules) {
+        setQueryRules(matchedAudience.queryRules.map((c, i) => ({ id: String(i + 1), field: c.field, operator: c.operator, value: c.value, logic: c.logic || 'AND' })));
+      }
     }
   }, [matchedAudience]);
 
@@ -71,9 +166,18 @@ const CreateAudience = () => {
   const handleRunQuery = () => {
     setIsRunning(true);
     setQueryRun(false);
+    // Simulate different size based on conditions
+    const hasProfession = queryRules.some(r => r.field === 'Profession' && r.value);
+    const hasAge = queryRules.some(r => r.field === 'Age' && r.value);
+    let size = matchedAudience?.sizeNum || 14200000;
+    if (hasProfession) size = Math.round(size * 0.6);
+    if (hasAge) size = Math.round(size * 0.95);
+    const sizeM = (size / 1000000).toFixed(1);
     setTimeout(() => {
       setIsRunning(false);
       setQueryRun(true);
+      setResultSize(`${sizeM}M`);
+      setResultSizeNum(size);
     }, 2500);
   };
 
@@ -82,22 +186,19 @@ const CreateAudience = () => {
     setIsCreating(true);
     try {
       await new Promise(resolve => setTimeout(resolve, 1500));
-      // Gather attributes from query rules
       const usedAttributes = queryRules.filter(r => r.field).map(r => r.field);
       const uniqueAttrs = [...new Set(usedAttributes)];
 
       const newAudience = {
         id: audienceName.toLowerCase().replace(/\s+/g, '-'),
         name: audienceName,
-        size: '~14.2M',
-        sizeNum: 14200000,
-        enrichmentStatus: 'Ready' as const,
+        size: queryRun ? `~${resultSize}` : '~14.2M',
+        sizeNum: queryRun ? resultSizeNum : 14200000,
         activationPlatforms: ['Meta', 'Google', 'DV360', 'YouTube'],
         status: 'Active' as const,
-        created: new Date().toISOString().split('T')[0],
-        enriched: false,
-        signals: [],
+        created: '2026-04-04',
         attributes: uniqueAttrs.length > 0 ? uniqueAttrs : (matchedAudience?.attributes || []),
+        queryRules: queryRules.filter(r => r.field).map(r => ({ field: r.field, operator: r.operator, value: r.value, logic: r.logic })),
       };
       addAudience(newAudience);
       toast({ title: "Audience Saved", description: `"${audienceName}" saved successfully` });
@@ -106,39 +207,14 @@ const CreateAudience = () => {
     finally { setIsCreating(false); }
   };
 
-  const insights = queryConfig.insights;
-
-  // Multi-select state for profession and genre fields
   const renderValueInput = (rule: QueryRule) => {
     if (rule.field === 'Profession' && (rule.operator === 'CONTAINS' || rule.operator === 'IN')) {
       const selected = rule.value ? rule.value.split(', ').filter(Boolean) : [];
-      return (
-        <div className="flex-1 flex flex-wrap gap-1.5 min-w-[200px]">
-          {PROFESSION_VALUES.map(p => (
-            <button key={p} onClick={() => {
-              const newSel = selected.includes(p) ? selected.filter(x => x !== p) : [...selected, p];
-              updateQueryRule(rule.id, { value: newSel.join(', ') });
-            }}
-              className={`px-2 py-1 rounded text-xs transition-all ${selected.includes(p) ? 'bg-primary/15 text-primary border border-primary/30' : 'bg-secondary text-muted-foreground border border-border'}`}
-            >{p}</button>
-          ))}
-        </div>
-      );
+      return <MultiSelectDropdown options={PROFESSION_VALUES} selected={selected} onChange={(v) => updateQueryRule(rule.id, { value: v.join(', ') })} placeholder="Select professions..." />;
     }
     if (rule.field === 'Genre Affinity') {
       const selected = rule.value ? rule.value.split(', ').filter(Boolean) : [];
-      return (
-        <div className="flex-1 flex flex-wrap gap-1.5 min-w-[200px]">
-          {GENRE_VALUES.map(g => (
-            <button key={g} onClick={() => {
-              const newSel = selected.includes(g) ? selected.filter(x => x !== g) : [...selected, g];
-              updateQueryRule(rule.id, { value: newSel.join(', ') });
-            }}
-              className={`px-2 py-1 rounded text-xs transition-all ${selected.includes(g) ? 'bg-primary/15 text-primary border border-primary/30' : 'bg-secondary text-muted-foreground border border-border'}`}
-            >{g}</button>
-          ))}
-        </div>
-      );
+      return <MultiSelectDropdown options={GENRE_VALUES} selected={selected} onChange={(v) => updateQueryRule(rule.id, { value: v.join(', ') })} placeholder="Select genres..." />;
     }
     return (
       <input type="text" value={rule.value} onChange={(e) => updateQueryRule(rule.id, { value: e.target.value })}
@@ -146,9 +222,12 @@ const CreateAudience = () => {
     );
   };
 
+  // Right panel data
+  const selectedAttrs = [...new Set(queryRules.filter(r => r.field).map(r => r.field))];
+  const matchingPartners = [...highlightedPartners];
+
   return (
     <div className="flex gap-6">
-      {/* Main Content */}
       <div className="flex-1 space-y-6">
         <div>
           <div className="flex items-center gap-3 mb-2">
@@ -156,10 +235,7 @@ const CreateAudience = () => {
               {matchedAudience ? matchedAudience.name : 'Create Audience'}
             </h1>
             {matchedAudience && (
-              <>
-                <span className="pill-chip text-xs">Pre-built Audience Template</span>
-                <span className="px-3 py-1 rounded-full text-xs font-medium bg-primary/15 text-primary border border-primary/30">Acquisition</span>
-              </>
+              <span className="pill-chip text-xs">Pre-built Audience Template</span>
             )}
           </div>
           <p className="text-muted-foreground">Build custom audience segments using data partner datasets</p>
@@ -171,7 +247,7 @@ const CreateAudience = () => {
           <div className="flex flex-wrap gap-3">
             {ALL_PARTNERS.map(partner => (
               <div key={partner}
-                className={`px-4 py-2 rounded-lg border text-sm ${selectedPartners.includes(partner) ? 'bg-primary/15 border-primary/50 text-primary' : 'border-border text-muted-foreground/40'}`}
+                className={`px-4 py-2 rounded-lg border text-sm transition-all ${highlightedPartners.has(partner) ? 'bg-primary/15 border-primary/50 text-primary' : 'border-border text-muted-foreground/40'}`}
               >{partner}</div>
             ))}
           </div>
@@ -216,8 +292,7 @@ const CreateAudience = () => {
             <Code size={20} className="text-primary" />
             <h3 className="text-lg font-semibold text-foreground">SQL Editor</h3>
           </div>
-          <textarea value={sqlQuery} onChange={(e) => setSqlQuery(e.target.value)}
-            className="w-full h-48 px-4 py-3 bg-background border border-border rounded-lg text-sm font-mono resize-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 text-foreground" />
+          <pre className="w-full px-4 py-3 bg-background border border-border rounded-lg text-sm font-mono text-foreground whitespace-pre-wrap overflow-x-auto min-h-[120px]">{sqlQuery}</pre>
         </div>
 
         {/* Run Query */}
@@ -241,7 +316,7 @@ const CreateAudience = () => {
           {queryRun && (
             <div className="grid grid-cols-2 gap-6">
               <div className="bg-secondary/50 rounded-lg p-4 text-center">
-                <div className="text-3xl font-bold text-primary">14.2M</div>
+                <div className="text-3xl font-bold text-primary">{resultSize}</div>
                 <div className="text-sm text-muted-foreground">Audience Size</div>
               </div>
               <div className="bg-secondary/50 rounded-lg p-4 text-center">
@@ -267,7 +342,7 @@ const CreateAudience = () => {
         </div>
       </div>
 
-      {/* Right Panel - Audience Intelligence */}
+      {/* Right Panel */}
       <div className="w-80 shrink-0 space-y-4">
         <div className="bg-card rounded-xl p-5 neon-border sticky top-6">
           <div className="flex items-center gap-2 mb-4">
@@ -276,39 +351,23 @@ const CreateAudience = () => {
           </div>
           <div className="space-y-4">
             <div>
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-1">Why This Audience Matters</h4>
-              <p className="text-sm text-foreground/80">{insights.why}</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-secondary/50 rounded-lg p-3">
-                <div className="text-xs text-muted-foreground">Affluence Index</div>
-                <div className="text-sm font-bold text-foreground">{insights.affluenceIndex}</div>
-              </div>
-              <div className="bg-secondary/50 rounded-lg p-3">
-                <div className="text-xs text-muted-foreground">OTT Engagement</div>
-                <div className="text-sm font-bold text-foreground">{insights.ottEngagement}</div>
-              </div>
-            </div>
-            <div className="bg-secondary/50 rounded-lg p-3">
-              <div className="text-xs text-muted-foreground">Conversion Potential</div>
-              <div className="text-lg font-bold text-primary">{insights.conversionPotential}</div>
-            </div>
-            <div>
               <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Selected Attributes</h4>
               <div className="flex flex-wrap gap-1.5">
-                {insights.attributes.map((s, i) => <span key={i} className="pill-chip text-xs">{s}</span>)}
+                {selectedAttrs.length > 0 ? selectedAttrs.map((s, i) => <span key={i} className="pill-chip text-xs">{s}</span>) :
+                  <span className="text-xs text-muted-foreground">Add conditions to see attributes</span>}
               </div>
             </div>
             <div>
               <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Matching Data Partners</h4>
               <div className="flex flex-wrap gap-1.5">
-                {insights.matchingPartners.map((p, i) => <span key={i} className="px-2 py-1 bg-secondary/50 text-xs text-foreground rounded">{p}</span>)}
+                {matchingPartners.length > 0 ? matchingPartners.map((p, i) => <span key={i} className="px-2 py-1 bg-secondary/50 text-xs text-foreground rounded">{p}</span>) :
+                  <span className="text-xs text-muted-foreground">Add conditions to see partners</span>}
               </div>
             </div>
             <div>
               <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Available Activation Platforms</h4>
               <div className="flex flex-wrap gap-1.5">
-                {insights.platforms.map((p, i) => <span key={i} className="px-2 py-1 bg-secondary/50 text-xs text-foreground rounded">{p}</span>)}
+                {['Meta Ads', 'Google Ads', 'DV360', 'YouTube'].map((p, i) => <span key={i} className="px-2 py-1 bg-secondary/50 text-xs text-foreground rounded">{p}</span>)}
               </div>
             </div>
           </div>

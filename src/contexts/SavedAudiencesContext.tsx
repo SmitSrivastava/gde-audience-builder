@@ -14,8 +14,8 @@ export const SavedAudiencesProvider: React.FC<{ children: React.ReactNode }> = (
 
   const addAudience = (audience: SubAudience) => {
     setSavedAudiences(prev => {
-      if (prev.find(a => a.id === audience.id)) return prev;
-      return [...prev, audience];
+      const filtered = prev.filter(a => a.id !== audience.id);
+      return [audience, ...filtered]; // new audiences at the top
     });
   };
 

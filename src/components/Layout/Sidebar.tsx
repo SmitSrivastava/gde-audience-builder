@@ -11,6 +11,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import netflixLogo from '@/assets/netflix-logo.png';
 
 const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
@@ -29,9 +30,12 @@ const Sidebar = () => {
       <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between">
           {!collapsed && (
-            <h1 className="text-xl font-bold text-primary">
-              GDE Platform
-            </h1>
+            <div className="flex items-center gap-2">
+              <img src={netflixLogo} alt="Netflix" className="h-6 object-contain" />
+            </div>
+          )}
+          {collapsed && (
+            <img src={netflixLogo} alt="Netflix" className="h-5 object-contain mx-auto" />
           )}
           <button
             onClick={() => setCollapsed(!collapsed)}

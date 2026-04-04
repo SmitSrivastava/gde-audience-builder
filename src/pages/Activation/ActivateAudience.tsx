@@ -1,8 +1,9 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle, Clock, AlertCircle, RefreshCw } from 'lucide-react';
+import { CheckCircle, Clock, AlertCircle, RefreshCw, User } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { allAudiences } from '@/data/audiences';
 
 interface ActivationPlatform {
   id: string; name: string; logo: string; description: string;
@@ -13,11 +14,10 @@ interface ActivationJob { id: string; platform: string; status: 'queued' | 'proc
 const ActivateAudience = () => {
   const { id } = useParams();
   const { toast } = useToast();
-  
-  const [audience] = useState({
-    id, name: 'High-Value Shoppers', rowCount: 15420,
-    identityFields: { email: 14200, phone: 8900, customerId: 15420 }
-  });
+
+  const matchedAudience = useMemo(() => allAudiences.find(a => a.id === id), [id]);
+  const audienceName = matchedAudience?.name || 'Selected Audience';
+  const audienceSize = matchedAudience?.size || '~15M';
 
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
   const [platformConfig, setPlatformConfig] = useState<Record<string, string>>({});
@@ -25,14 +25,14 @@ const ActivateAudience = () => {
   const [isActivating, setIsActivating] = useState(false);
 
   const platforms: ActivationPlatform[] = [
-    { id: 'google-ads', name: 'Google Ads', logo: '🎯', description: 'Activate to Google Ads Customer Match',
-      fields: [{ name: 'matchType', label: 'Match Type', type: 'select', options: ['Customer Match', 'Performance Max'], required: true }, { name: 'accountId', label: 'Google Account ID', type: 'text', required: true }] },
-    { id: 'meta-ads', name: 'Meta Ads', logo: '📘', description: 'Activate to Meta/Facebook Ads',
-      fields: [{ name: 'integType', label: 'Integration Type', type: 'select', options: ['Pixel', 'CAPI'], required: true }, { name: 'adAccountId', label: 'Ad Account ID', type: 'text', required: true }] },
-    { id: 'trade-desk', name: 'The Trade Desk', logo: '🏢', description: 'Activate to TTD platform',
-      fields: [{ name: 'advertiserId', label: 'Advertiser ID', type: 'text', required: true }] },
-    { id: 'amazon-dsp', name: 'Amazon DSP', logo: '📦', description: 'Activate to Amazon DSP',
-      fields: [{ name: 'advertiserId', label: 'Advertiser ID', type: 'text', required: true }, { name: 'region', label: 'Region', type: 'select', options: ['US', 'EU', 'APAC'], required: true }] }
+    { id: 'meta-ads', name: 'Meta Ads', logo: '📘', description: 'Activate to Meta/Facebook & Instagram Ads',
+      fields: [{ name: 'integType', label: 'Integration Type', type: 'select', options: ['Custom Audience', 'CAPI'], required: true }, { name: 'adAccountId', label: 'Ad Account ID', type: 'text', required: true }] },
+    { id: 'google-dv360', name: 'Google DV360', logo: '📊', description: 'Activate to Display & Video 360',
+      fields: [{ name: 'partnerId', label: 'Partner ID', type: 'text', required: true }, { name: 'advertiserId', label: 'Advertiser ID', type: 'text', required: true }] },
+    { id: 'youtube', name: 'YouTube', logo: '▶️', description: 'Activate to YouTube Ads targeting',
+      fields: [{ name: 'accountId', label: 'Google Account ID', type: 'text', required: true }, { name: 'matchType', label: 'Match Type', type: 'select', options: ['Customer Match', 'Similar Audiences'], required: true }] },
+    { id: 'programmatic', name: 'Programmatic (TTD)', logo: '🏢', description: 'Activate to The Trade Desk programmatic',
+      fields: [{ name: 'advertiserId', label: 'Advertiser ID', type: 'text', required: true }] }
   ];
 
   const handleActivate = async () => {
@@ -47,9 +47,8 @@ const ActivateAudience = () => {
     setActivationJobs(prev => [newJob, ...prev]);
     setTimeout(() => { setActivationJobs(prev => prev.map(j => j.id === newJob.id ? { ...j, status: 'processing' } : j)); }, 1000);
     setTimeout(() => {
-      const success = Math.random() > 0.3;
-      setActivationJobs(prev => prev.map(j => j.id === newJob.id ? { ...j, status: success ? 'completed' : 'error', error: success ? undefined : 'Platform connection failed' } : j));
-      toast({ title: success ? "Activation Complete" : "Activation Failed", description: success ? `Audience activated to ${platform.name}` : "Check config and retry", variant: success ? "default" : "destructive" });
+      setActivationJobs(prev => prev.map(j => j.id === newJob.id ? { ...j, status: 'completed' } : j));
+      toast({ title: "Activation Complete", description: `Audience activated to ${platform.name} successfully` });
     }, 4000);
     setSelectedPlatform(null); setPlatformConfig({}); setIsActivating(false);
   };
@@ -66,32 +65,32 @@ const ActivateAudience = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground mb-2">Activate Audience</h1>
-        <p className="text-muted-foreground">Deploy your audience to advertising platforms</p>
+      <div className="hero-gradient rounded-2xl p-8 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-48 h-48 bg-[hsl(0_85%_50%/0.08)] rounded-full blur-[80px]"></div>
+        <div className="relative z-10">
+          <h1 className="text-3xl font-bold text-foreground mb-2">Activate Audience</h1>
+          <p className="text-muted-foreground">Deploy your audience to advertising platforms</p>
+        </div>
       </div>
 
       {/* Audience Header */}
       <div className="bg-card rounded-xl p-6 neon-border">
-        <h2 className="text-xl font-semibold text-foreground">{audience.name}</h2>
-        <p className="text-muted-foreground">{audience.rowCount.toLocaleString()} total records</p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-          {[
-            { label: 'Email Addresses', value: audience.identityFields.email },
-            { label: 'Phone Numbers', value: audience.identityFields.phone },
-            { label: 'Customer IDs', value: audience.identityFields.customerId }
-          ].map((item, i) => (
-            <div key={i} className="bg-secondary/50 rounded-lg p-4">
-              <div className="text-sm text-muted-foreground">{item.label}</div>
-              <div className="text-2xl font-semibold text-foreground">{item.value.toLocaleString()}</div>
-            </div>
+        <h2 className="text-xl font-semibold text-foreground mb-1">{audienceName}</h2>
+        <div className="flex items-center gap-6 text-sm text-muted-foreground mt-2">
+          <span>Size: <strong className="text-foreground">{audienceSize}</strong></span>
+          <span className="flex items-center gap-1"><User size={14} /> Created by: <strong className="text-foreground">John Smith</strong></span>
+          <span>Created: <strong className="text-foreground">{matchedAudience?.created || '2024-03-15'}</strong></span>
+        </div>
+        <div className="flex flex-wrap gap-2 mt-3">
+          {matchedAudience?.activationPlatforms.map(p => (
+            <span key={p} className="px-2 py-1 bg-primary/10 text-primary text-xs rounded border border-primary/20">{p}</span>
           ))}
         </div>
       </div>
 
       {/* Platform Selection */}
       <div className="bg-card rounded-xl p-6 neon-border">
-        <h3 className="text-lg font-semibold text-foreground mb-4">Select Activation Platform</h3>
+        <h3 className="text-lg font-semibold text-foreground mb-4">Select Destination Platform</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {platforms.map(platform => (
             <button key={platform.id} onClick={() => { setSelectedPlatform(platform.id); setPlatformConfig({}); }}
@@ -148,7 +147,6 @@ const ActivateAudience = () => {
                   <div>
                     <div className="font-medium text-foreground">{job.platform}</div>
                     <div className="text-sm text-muted-foreground">{new Date(job.createdAt).toLocaleString()}</div>
-                    {job.error && <div className="text-sm text-destructive mt-1">{job.error}</div>}
                   </div>
                 </div>
                 <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(job.status)}`}>{job.status.charAt(0).toUpperCase() + job.status.slice(1)}</span>

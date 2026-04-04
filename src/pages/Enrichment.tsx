@@ -2,16 +2,11 @@
 import React from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import { Sparkles, ArrowRight } from 'lucide-react';
+import { allAudiences } from '@/data/audiences';
 import EnrichAudience from './Enrichment/EnrichAudience';
 
 const EnrichmentHome = () => {
   const navigate = useNavigate();
-  
-  const audiences = [
-    { id: '1', name: 'High-Value Shoppers', created: '2024-01-15', count: 15420, status: 'Active' },
-    { id: '2', name: 'Mobile App Users', created: '2024-01-14', count: 8932, status: 'Active' },
-    { id: '3', name: 'Email Subscribers', created: '2024-01-13', count: 25670, status: 'Processing' }
-  ];
 
   return (
     <div className="space-y-8">
@@ -38,24 +33,30 @@ const EnrichmentHome = () => {
             <thead>
               <tr className="border-b border-border">
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Audience Name</th>
-                <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Created</th>
-                <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Records</th>
+                <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Size</th>
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Status</th>
+                <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Signals</th>
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Action</th>
               </tr>
             </thead>
             <tbody>
-              {audiences.map((audience) => (
+              {allAudiences.filter(a => a.status === 'Active').slice(0, 8).map((audience) => (
                 <tr key={audience.id} className="border-b border-border hover:bg-secondary/30 transition-colors">
                   <td className="py-4 font-medium text-foreground">{audience.name}</td>
-                  <td className="py-4 text-muted-foreground">{audience.created}</td>
-                  <td className="py-4 text-muted-foreground">{audience.count.toLocaleString()}</td>
+                  <td className="py-4 text-muted-foreground">{audience.size}</td>
                   <td className="py-4">
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      audience.status === 'Active'
+                      audience.enrichmentStatus === 'Ready'
                         ? 'bg-primary/15 text-primary border border-primary/30'
                         : 'bg-secondary text-muted-foreground'
-                    }`}>{audience.status}</span>
+                    }`}>{audience.enrichmentStatus}</span>
+                  </td>
+                  <td className="py-4">
+                    <div className="flex flex-wrap gap-1">
+                      {audience.signals.slice(0, 2).map((s, i) => (
+                        <span key={i} className="px-2 py-0.5 bg-secondary text-xs text-muted-foreground rounded">{s}</span>
+                      ))}
+                    </div>
                   </td>
                   <td className="py-4">
                     <button

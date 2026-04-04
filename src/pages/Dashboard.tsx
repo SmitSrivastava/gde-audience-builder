@@ -5,6 +5,8 @@ import { Users, Sparkles, Target, Activity, ArrowRight, ChevronDown, ChevronUp, 
 import { cohortCategories } from '@/data/audiences';
 import { useSavedAudiences } from '@/contexts/SavedAudiencesContext';
 import netflixLogo from '@/assets/netflix-logo.png';
+import helloBachhon from '@/assets/hello-bachhon.jpeg';
+import mamlaLegalHai from '@/assets/mamla-legal-hai.jpeg';
 
 
 const Dashboard = () => {

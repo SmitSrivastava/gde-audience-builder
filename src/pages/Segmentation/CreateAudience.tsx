@@ -350,6 +350,31 @@ const CreateAudience = () => {
             <h3 className="font-semibold text-foreground">Audience Intelligence</h3>
           </div>
           <div className="space-y-4">
+            {/* Why This Audience Matters */}
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Why This Audience Matters</h4>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {matchedAudience ? `${matchedAudience.name} represent the highest-value acquisition cohort for Netflix India — high disposable income, multi-OTT behavior, and premium device ownership indicate strong conversion potential.` : 'Build your audience to see insights here.'}
+              </p>
+            </div>
+
+            {/* Metric Cards */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-secondary/50 rounded-lg p-3 text-center">
+                <div className="text-xs text-muted-foreground mb-1">Affluence Index</div>
+                <div className="text-lg font-bold text-foreground">High</div>
+              </div>
+              <div className="bg-secondary/50 rounded-lg p-3 text-center">
+                <div className="text-xs text-muted-foreground mb-1">OTT Engagement</div>
+                <div className="text-lg font-bold text-foreground">High</div>
+              </div>
+            </div>
+            <div className="bg-secondary/50 rounded-lg p-3 text-center">
+              <div className="text-xs text-muted-foreground mb-1">Conversion Potential</div>
+              <div className="text-lg font-bold text-primary">Very High</div>
+            </div>
+
+            {/* Selected Attributes */}
             <div>
               <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Selected Attributes</h4>
               <div className="flex flex-wrap gap-1.5">

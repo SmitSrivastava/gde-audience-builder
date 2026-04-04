@@ -6,12 +6,6 @@ import { cohortCategories } from '@/data/audiences';
 import { useSavedAudiences } from '@/contexts/SavedAudiencesContext';
 import netflixLogo from '@/assets/netflix-logo.png';
 
-const platformIcons: Record<string, string> = {
-  'Meta': '📘',
-  'Google': '🎯',
-  'DV360': '📊',
-  'YouTube': '▶️',
-};
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -128,12 +122,10 @@ const Dashboard = () => {
                             {sub.name}
                           </button>
                           <div className="text-xs text-muted-foreground mt-0.5">Attributes: {sub.attributes.join(', ')}</div>
-                          <div className="flex items-center gap-3 mt-1.5">
-                            <div className="flex items-center gap-1">
-                              {sub.activationPlatforms.map(p => (
-                                <span key={p} className="text-xs" title={p}>{platformIcons[p] || '📡'}</span>
-                              ))}
-                            </div>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            {sub.activationPlatforms.map(p => (
+                              <span key={p} className="px-2 py-0.5 bg-secondary text-xs text-muted-foreground rounded">{p}</span>
+                            ))}
                           </div>
                         </div>
                         <div className="flex items-center gap-6">

@@ -5,6 +5,10 @@ import { CheckCircle, User } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { allAudiences } from '@/data/audiences';
 import { useSavedAudiences } from '@/contexts/SavedAudiencesContext';
+import metaLogo from '@/assets/meta-logo.png';
+import dv360Logo from '@/assets/dv360-logo.png';
+import googleAdsLogo from '@/assets/google-ads-logo.png';
+import ttdLogo from '@/assets/ttd-logo.png';
 
 const maskId = (id: string) => {
   if (id.length <= 3) return id;
@@ -36,16 +40,16 @@ const ActivateAudience = () => {
   const [isActivating, setIsActivating] = useState(false);
 
   const platforms: ActivationPlatform[] = [
-    { id: 'meta-ads', name: 'Meta Ads', logo: '📘', description: 'Activate to Meta/Facebook & Instagram Ads',
+    { id: 'meta-ads', name: 'Meta Ads', logo: metaLogo, description: 'Activate to Meta/Facebook & Instagram Ads',
       defaultConfig: { integType: 'Custom Audience', adAccountId: 'act_9847362510' },
       fields: [{ name: 'integType', label: 'Integration Type', type: 'select', options: ['Custom Audience', 'CAPI'], required: true }, { name: 'adAccountId', label: 'Ad Account ID', type: 'text', required: true }] },
-    { id: 'google-dv360', name: 'Google DV360', logo: '📊', description: 'Activate to Display & Video 360',
+    { id: 'google-dv360', name: 'Google DV360', logo: dv360Logo, description: 'Activate to Display & Video 360',
       defaultConfig: { partnerId: 'DV360-8734921', advertiserId: 'ADV-NF-IN-2026' },
       fields: [{ name: 'partnerId', label: 'Partner ID', type: 'text', required: true }, { name: 'advertiserId', label: 'Advertiser ID', type: 'text', required: true }] },
-    { id: 'youtube', name: 'YouTube', logo: '▶️', description: 'Activate to YouTube Ads targeting',
-      defaultConfig: { accountId: 'YT-NF-384756', matchType: 'Customer Match' },
+    { id: 'google-ads', name: 'Google Ads', logo: googleAdsLogo, description: 'Activate to Google Ads targeting',
+      defaultConfig: { accountId: 'GA-NF-384756', matchType: 'Customer Match' },
       fields: [{ name: 'accountId', label: 'Google Account ID', type: 'text', required: true }, { name: 'matchType', label: 'Match Type', type: 'select', options: ['Customer Match', 'Similar Audiences'], required: true }] },
-    { id: 'programmatic', name: 'Programmatic (TTD)', logo: '🏢', description: 'Activate to The Trade Desk programmatic',
+    { id: 'ttd', name: 'TTD', logo: ttdLogo, description: 'Activate to The Trade Desk',
       defaultConfig: { advertiserId: 'TTD-NF-IN-7291' },
       fields: [{ name: 'advertiserId', label: 'Advertiser ID', type: 'text', required: true }] }
   ];
@@ -114,7 +118,7 @@ const ActivateAudience = () => {
             <button key={platform.id} onClick={() => handleSelectPlatform(platform.id)}
               className={`p-4 rounded-xl border text-left transition-all ${selectedPlatform === platform.id ? 'border-primary/50 bg-primary/10' : 'border-border hover:border-primary/30 hover:bg-secondary/30'}`}>
               <div className="flex items-center gap-3">
-                <span className="text-2xl">{platform.logo}</span>
+                <img src={platform.logo} alt={platform.name} className="w-8 h-8 object-contain" />
                 <div>
                   <div className="font-medium text-foreground">{platform.name}</div>
                   <div className="text-sm text-muted-foreground">{platform.description}</div>

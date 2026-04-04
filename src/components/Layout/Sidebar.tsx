@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import netflixLogo from '@/assets/netflix-logo.png';
+import familyBusiness from '@/assets/family-business.jpeg';
 
 const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
@@ -67,6 +68,18 @@ const Sidebar = () => {
           ))}
         </ul>
       </nav>
+
+      {/* Family Business Show image at bottom */}
+      {!collapsed && (
+        <div className="mt-auto p-3">
+          <img
+            src={familyBusiness}
+            alt="Family Business"
+            className="w-full rounded-xl opacity-30 object-cover"
+            style={{ maxHeight: '280px' }}
+          />
+        </div>
+      )}
     </div>
   );
 };

@@ -11,7 +11,7 @@ const EnrichmentHome = () => {
   const { savedAudiences } = useSavedAudiences();
 
   const demoAudiences = allAudiences.filter(a => demoAudienceIds.includes(a.id) && a.status === 'Active');
-  const allDisplayed = [...demoAudiences, ...savedAudiences];
+  const allDisplayed = [...savedAudiences, ...demoAudiences];
 
   return (
     <div className="space-y-8">
@@ -23,15 +23,15 @@ const EnrichmentHome = () => {
             <h1 className="text-3xl font-bold text-foreground">Data Enrichment</h1>
           </div>
           <p className="text-lg text-muted-foreground">
-            Select an audience to enrich your client's dataset with external data partners
+            Select an audience to enrich Netflix cohort with external data partners
           </p>
         </div>
       </div>
 
       <div className="bg-card rounded-xl neon-border">
         <div className="p-6 border-b border-border">
-          <h2 className="text-xl font-semibold text-foreground">Available Audiences for Client Data Enrichment</h2>
-          <p className="text-sm text-muted-foreground mt-1">Choose an audience segment to enhance your client's dataset</p>
+          <h2 className="text-xl font-semibold text-foreground">Available Audiences for Netflix Cohort Enrichment</h2>
+          <p className="text-sm text-muted-foreground mt-1">Choose an audience segment to enhance Netflix cohort</p>
         </div>
         <div className="p-6">
           <table className="w-full">
@@ -39,7 +39,7 @@ const EnrichmentHome = () => {
               <tr className="border-b border-border">
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Audience Name</th>
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Size</th>
-                <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Attributes</th>
+                <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Status</th>
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Action</th>
               </tr>
             </thead>
@@ -52,18 +52,14 @@ const EnrichmentHome = () => {
                   </td>
                   <td className="py-4 text-muted-foreground">{audience.size}</td>
                   <td className="py-4">
-                    <div className="flex flex-wrap gap-1">
-                      {audience.attributes.slice(0, 3).map((a, i) => (
-                        <span key={i} className="px-2 py-0.5 bg-secondary text-xs text-muted-foreground rounded">{a}</span>
-                      ))}
-                    </div>
+                    <span className="px-3 py-1 rounded-full text-xs font-medium bg-primary/15 text-primary border border-primary/30">Not Started</span>
                   </td>
                   <td className="py-4">
                     <button
                       onClick={() => navigate(`/enrichment/audiences/${audience.id}`)}
-                      className="group flex items-center gap-2 px-4 py-2 bg-secondary hover:bg-secondary/80 text-foreground text-sm rounded-lg font-medium transition-all border border-border"
+                      className="group flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground text-sm rounded-lg font-medium transition-all"
                     >
-                      <span>Enrich Client Data</span>
+                      <span>Enrich Netflix Cohort</span>
                       <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
                     </button>
                   </td>

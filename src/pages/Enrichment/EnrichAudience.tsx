@@ -45,20 +45,18 @@ const EnrichAudience = () => {
     setFieldMappings(fieldMappings.map((m, i) => i === index ? { ...m, ...updates } : m));
   };
 
-  const overlapPercent = 55 + Math.random() * 5; // between 55-60, calculated once
-  const [storedOverlap] = useState(parseFloat(overlapPercent.toFixed(1)));
+  const [storedOverlap] = useState(parseFloat((55 + Math.random() * 5).toFixed(1)));
 
   const handleRunEnrichment = async () => {
     if (selectedClientDatasets.length === 0) { toast({ title: "Error", description: "Please select at least one client dataset to enrich", variant: "destructive" }); return; }
     setIsEnriching(true);
     setSaved(false);
     setTimeout(() => {
-      const newDataPoints = 3 + Math.floor(Math.random() * 3); // 3-5
       setEnrichmentResults({
         totalAudienceRecords: audienceSizeNum,
         netflixRecords: 28000000,
         matchRate: storedOverlap,
-        newFieldsAdded: newDataPoints,
+        newFieldsAdded: audienceAttributes.length || 6,
       });
       setIsEnriching(false);
     }, 2000);
@@ -77,8 +75,8 @@ const EnrichAudience = () => {
       <div className="hero-gradient rounded-2xl p-8 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-48 h-48 bg-[hsl(0_85%_50%/0.08)] rounded-full blur-[80px]"></div>
         <div className="relative z-10">
-          <h1 className="text-4xl font-bold text-foreground mb-2">Client Data Enrichment</h1>
-          <p className="text-lg text-muted-foreground">Enrich your client datasets with insights from the selected audience cohort</p>
+          <h1 className="text-4xl font-bold text-foreground mb-2">Netflix Cohort Enrichment</h1>
+          <p className="text-lg text-muted-foreground">Enrich Netflix cohort with insights from the selected audience segment</p>
         </div>
       </div>
 
@@ -185,7 +183,7 @@ const EnrichAudience = () => {
                 { label: 'Audience Records', value: `${(enrichmentResults.totalAudienceRecords / 1000000).toFixed(1)}M` },
                 { label: 'Netflix Records', value: `${(enrichmentResults.netflixRecords / 1000000).toFixed(1)}M` },
                 { label: 'Overlap / Match Rate', value: `${enrichmentResults.matchRate}%` },
-                { label: 'New Data Points', value: enrichmentResults.newFieldsAdded },
+                { label: 'Data Points Enriched', value: enrichmentResults.newFieldsAdded },
               ].map((item, i) => (
                 <div key={i} className="text-center">
                   <div className="text-3xl font-bold text-primary">{item.value}</div>
@@ -201,8 +199,8 @@ const EnrichAudience = () => {
         <div className="bg-card rounded-xl p-6 neon-border">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-xl font-bold text-foreground">Save Enriched Client Data</h3>
-              <p className="text-sm text-muted-foreground mt-1">Create an enriched version of your client datasets with audience insights</p>
+              <h3 className="text-xl font-bold text-foreground">Save Enriched Netflix Cohort Data</h3>
+              <p className="text-sm text-muted-foreground mt-1">Create an enriched version of Netflix cohort with audience insights</p>
             </div>
             <button onClick={handleSaveEnrichedData} disabled={saved} className={`px-6 py-3 rounded-lg font-medium transition-colors ${saved ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary/90 text-primary-foreground'}`}>
               {saved ? 'Saved ✓' : 'Save Enriched Data'}

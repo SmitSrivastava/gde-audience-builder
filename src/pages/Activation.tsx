@@ -11,7 +11,7 @@ const ActivationHome = () => {
   const { savedAudiences } = useSavedAudiences();
 
   const demoAudiences = allAudiences.filter(a => demoAudienceIds.includes(a.id) && a.status === 'Active');
-  const allDisplayed = [...demoAudiences, ...savedAudiences];
+  const allDisplayed = [...savedAudiences, ...demoAudiences];
 
   return (
     <div className="space-y-8">
@@ -40,7 +40,6 @@ const ActivationHome = () => {
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Audience Name</th>
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Size</th>
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Status</th>
-                <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Attributes</th>
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Platforms</th>
                 <th className="text-left py-4 font-semibold text-muted-foreground text-sm">Action</th>
               </tr>
@@ -55,13 +54,6 @@ const ActivationHome = () => {
                   <td className="py-4 text-muted-foreground">{audience.size}</td>
                   <td className="py-4">
                     <span className="px-3 py-1 rounded-full text-xs font-medium bg-primary/15 text-primary border border-primary/30">Ready</span>
-                  </td>
-                  <td className="py-4">
-                    <div className="flex flex-wrap gap-1">
-                      {audience.attributes.slice(0, 3).map((a, i) => (
-                        <span key={i} className="px-2 py-0.5 bg-secondary text-xs text-muted-foreground rounded">{a}</span>
-                      ))}
-                    </div>
                   </td>
                   <td className="py-4">
                     <div className="flex gap-1">

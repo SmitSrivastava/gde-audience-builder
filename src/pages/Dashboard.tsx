@@ -90,12 +90,13 @@ const Dashboard = () => {
         ))}
       </div>
 
-      {/* Featured Cohorts - Expandable Accordion */}
+      {/* Featured Cohorts */}
       <div>
         <h2 className="text-2xl font-bold text-foreground mb-6">Featured Ready-to-Use Cohorts</h2>
         <div className="space-y-4">
           {cohortCategories.map((cat) => {
             const isExpanded = expandedCategories.includes(cat.id);
+            const totalSize = (cat as any).totalSize;
             return (
               <div key={cat.id} className="bg-card rounded-xl neon-border neon-border-hover card-hover overflow-hidden">
                 <button
@@ -108,7 +109,7 @@ const Dashboard = () => {
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="text-right">
-                      <div className="text-2xl font-extrabold text-primary">{cat.totalSize}</div>
+                      <div className="text-2xl font-extrabold text-primary">{totalSize}</div>
                       <div className="text-xs text-muted-foreground">total users</div>
                     </div>
                     {isExpanded ? <ChevronUp className="text-muted-foreground" size={20} /> : <ChevronDown className="text-muted-foreground" size={20} />}
@@ -128,11 +129,6 @@ const Dashboard = () => {
                           </button>
                           <div className="text-xs text-muted-foreground mt-0.5">Attributes: {sub.attributes.join(', ')}</div>
                           <div className="flex items-center gap-3 mt-1.5">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                              sub.enrichmentStatus === 'Ready' ? 'bg-primary/15 text-primary border border-primary/30' : 'bg-secondary text-muted-foreground'
-                            }`}>
-                              Enrichment: {sub.enrichmentStatus}
-                            </span>
                             <div className="flex items-center gap-1">
                               {sub.activationPlatforms.map(p => (
                                 <span key={p} className="text-xs" title={p}>{platformIcons[p] || '📡'}</span>
@@ -167,7 +163,6 @@ const Dashboard = () => {
             );
           })}
 
-          {/* Show saved audiences if any */}
           {savedAudiences.length > 0 && (
             <div className="bg-card rounded-xl neon-border overflow-hidden">
               <div className="p-6">

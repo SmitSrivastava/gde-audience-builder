@@ -1,10 +1,15 @@
 
 import React, { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle, Clock, RefreshCw, User } from 'lucide-react';
+import { CheckCircle, User } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { allAudiences } from '@/data/audiences';
 import { useSavedAudiences } from '@/contexts/SavedAudiencesContext';
+
+const maskId = (id: string) => {
+  if (id.length <= 3) return id;
+  return '•'.repeat(id.length - 3) + id.slice(-3);
+};
 
 interface ActivationPlatform {
   id: string; name: string; logo: string; description: string;
@@ -35,7 +40,7 @@ const ActivateAudience = () => {
       defaultConfig: { integType: 'Custom Audience', adAccountId: 'act_9847362510' },
       fields: [{ name: 'integType', label: 'Integration Type', type: 'select', options: ['Custom Audience', 'CAPI'], required: true }, { name: 'adAccountId', label: 'Ad Account ID', type: 'text', required: true }] },
     { id: 'google-dv360', name: 'Google DV360', logo: '📊', description: 'Activate to Display & Video 360',
-      defaultConfig: { partnerId: 'DV360-8734921', advertiserId: 'ADV-NF-IN-2024' },
+      defaultConfig: { partnerId: 'DV360-8734921', advertiserId: 'ADV-NF-IN-2026' },
       fields: [{ name: 'partnerId', label: 'Partner ID', type: 'text', required: true }, { name: 'advertiserId', label: 'Advertiser ID', type: 'text', required: true }] },
     { id: 'youtube', name: 'YouTube', logo: '▶️', description: 'Activate to YouTube Ads targeting',
       defaultConfig: { accountId: 'YT-NF-384756', matchType: 'Customer Match' },
@@ -48,7 +53,14 @@ const ActivateAudience = () => {
   const handleSelectPlatform = (platformId: string) => {
     const platform = platforms.find(p => p.id === platformId);
     setSelectedPlatform(platformId);
-    setPlatformConfig(platform?.defaultConfig || {});
+    // Mask the IDs
+    const config: Record<string, string> = {};
+    if (platform?.defaultConfig) {
+      for (const [key, val] of Object.entries(platform.defaultConfig)) {
+        config[key] = maskId(val);
+      }
+    }
+    setPlatformConfig(config);
     setActivationSuccess(null);
   };
 
@@ -84,7 +96,7 @@ const ActivateAudience = () => {
         <div className="flex items-center gap-6 text-sm text-muted-foreground mt-2">
           <span>Size: <strong className="text-foreground">{audienceSize}</strong></span>
           <span className="flex items-center gap-1"><User size={14} /> Created by: <strong className="text-foreground">Smit Srivastava</strong></span>
-          <span>Created: <strong className="text-foreground">{matchedAudience?.created || '2024-03-15'}</strong></span>
+          <span>Created: <strong className="text-foreground">{matchedAudience?.created || '2026-03-15'}</strong></span>
         </div>
         <div className="text-xs text-muted-foreground mt-2">Attributes: {audienceAttributes.join(', ')}</div>
         <div className="flex flex-wrap gap-2 mt-3">

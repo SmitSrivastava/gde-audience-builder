@@ -11,7 +11,8 @@ const AudienceList = () => {
   const { savedAudiences } = useSavedAudiences();
 
   const demoAudiences = allAudiences.filter(a => demoAudienceIds.includes(a.id) && a.status === 'Active');
-  const allDisplayed = [...demoAudiences, ...savedAudiences];
+  // Saved audiences at top, then demo
+  const allDisplayed = [...savedAudiences, ...demoAudiences];
 
   return (
     <div className="space-y-6">

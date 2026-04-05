@@ -101,7 +101,7 @@ const CreateAudience = () => {
   }, [audienceId, matchedAudience]);
 
   const [queryRules, setQueryRules] = useState<QueryRule[]>(
-    queryConfig.conditions.map((c, i) => ({ id: String(i + 1), field: c.field, operator: c.operator, value: c.value, logic: c.logic || 'AND' as const }))
+    audienceId ? queryConfig.conditions.map((c, i) => ({ id: String(i + 1), field: c.field, operator: c.operator, value: c.value, logic: c.logic || 'AND' as const })) : [{ id: '1', field: '', operator: '', value: '', logic: 'AND' }]
   );
 
   // Derive highlighted partners from fields used in query rules
@@ -342,62 +342,63 @@ const CreateAudience = () => {
         </div>
       </div>
 
-      {/* Right Panel */}
-      <div className="w-80 shrink-0 space-y-4">
-        <div className="bg-card rounded-xl p-5 neon-border sticky top-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Info size={18} className="text-primary" />
-            <h3 className="font-semibold text-foreground">Audience Intelligence</h3>
-          </div>
-          <div className="space-y-4">
-            {/* Why This Audience Matters */}
-            <div>
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Why This Audience Matters</h4>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                {matchedAudience ? `${matchedAudience.name} represent the highest-value acquisition cohort for Netflix India — high disposable income, multi-OTT behavior, and premium device ownership indicate strong conversion potential.` : 'Build your audience to see insights here.'}
-              </p>
+      {/* Right Panel - only show when fields are selected */}
+      {selectedAttrs.length > 0 && (
+        <div className="w-80 shrink-0 space-y-4">
+          <div className="bg-card rounded-xl p-5 neon-border sticky top-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Info size={18} className="text-primary" />
+              <h3 className="font-semibold text-foreground">Audience Intelligence</h3>
             </div>
+            <div className="space-y-4">
+              {/* Why This Audience Matters */}
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Why This Audience Matters</h4>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {matchedAudience ? `${matchedAudience.name} represent the highest-value acquisition cohort for Netflix India — high disposable income, multi-OTT behavior, and premium device ownership indicate strong conversion potential.` : 'This audience segment shows strong potential based on selected attributes — high engagement signals and targetable demographics make it ideal for precision campaigns.'}
+                </p>
+              </div>
 
-            {/* Metric Cards */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-secondary/50 rounded-lg p-3 text-center">
-                <div className="text-xs text-muted-foreground mb-1">Affluence Index</div>
-                <div className="text-lg font-bold text-foreground">High</div>
+              {/* Metric Cards */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-secondary/50 rounded-lg p-3 text-center">
+                  <div className="text-xs text-muted-foreground mb-1">Affluence Index</div>
+                  <div className="text-lg font-bold text-foreground">High</div>
+                </div>
+                <div className="bg-secondary/50 rounded-lg p-3 text-center">
+                  <div className="text-xs text-muted-foreground mb-1">OTT Engagement</div>
+                  <div className="text-lg font-bold text-foreground">High</div>
+                </div>
               </div>
               <div className="bg-secondary/50 rounded-lg p-3 text-center">
-                <div className="text-xs text-muted-foreground mb-1">OTT Engagement</div>
-                <div className="text-lg font-bold text-foreground">High</div>
+                <div className="text-xs text-muted-foreground mb-1">Conversion Potential</div>
+                <div className="text-lg font-bold text-primary">Very High</div>
               </div>
-            </div>
-            <div className="bg-secondary/50 rounded-lg p-3 text-center">
-              <div className="text-xs text-muted-foreground mb-1">Conversion Potential</div>
-              <div className="text-lg font-bold text-primary">Very High</div>
-            </div>
 
-            {/* Selected Attributes */}
-            <div>
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Selected Attributes</h4>
-              <div className="flex flex-wrap gap-1.5">
-                {selectedAttrs.length > 0 ? selectedAttrs.map((s, i) => <span key={i} className="pill-chip text-xs">{s}</span>) :
-                  <span className="text-xs text-muted-foreground">Add conditions to see attributes</span>}
+              {/* Selected Attributes */}
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Selected Attributes</h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedAttrs.map((s, i) => <span key={i} className="pill-chip text-xs">{s}</span>)}
+                </div>
               </div>
-            </div>
-            <div>
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Matching Data Partners</h4>
-              <div className="flex flex-wrap gap-1.5">
-                {matchingPartners.length > 0 ? matchingPartners.map((p, i) => <span key={i} className="px-2 py-1 bg-secondary/50 text-xs text-foreground rounded">{p}</span>) :
-                  <span className="text-xs text-muted-foreground">Add conditions to see partners</span>}
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Matching Data Partners</h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {matchingPartners.length > 0 ? matchingPartners.map((p, i) => <span key={i} className="px-2 py-1 bg-secondary/50 text-xs text-foreground rounded">{p}</span>) :
+                    <span className="text-xs text-muted-foreground">Add conditions to see partners</span>}
+                </div>
               </div>
-            </div>
-            <div>
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Available Activation Platforms</h4>
-              <div className="flex flex-wrap gap-1.5">
-                {['Meta Ads', 'Google Ads', 'DV360', 'YouTube'].map((p, i) => <span key={i} className="px-2 py-1 bg-secondary/50 text-xs text-foreground rounded">{p}</span>)}
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Available Activation Platforms</h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {['Meta Ads', 'Google Ads', 'DV360', 'YouTube'].map((p, i) => <span key={i} className="px-2 py-1 bg-secondary/50 text-xs text-foreground rounded">{p}</span>)}
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

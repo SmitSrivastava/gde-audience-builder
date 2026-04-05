@@ -19,6 +19,8 @@ import helloBachhon from '@/assets/hello-bachhon.jpeg';
 const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const { role } = useAuth();
+  const location = useLocation();
+  const isDashboard = location.pathname === '/';
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Users, 
@@ -19,6 +19,8 @@ import helloBachhon from '@/assets/hello-bachhon.jpeg';
 const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const { role } = useAuth();
+  const location = useLocation();
+  const isDashboard = location.pathname === '/';
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
@@ -71,12 +73,16 @@ const Sidebar = () => {
         </ul>
       </nav>
 
-      {/* Family Business Show image right after nav */}
+      {/* Show images - fill remaining space */}
       {!collapsed && (
-        <div className="p-3 mt-2 space-y-2">
-          <img src={familyBusiness} alt="Family Business" className="w-full rounded-xl opacity-30 object-cover" style={{ maxHeight: '160px' }} />
-          <img src={mamlaLegalHai} alt="Maamla Legal Hai" className="w-full rounded-xl opacity-30 object-cover" style={{ maxHeight: '160px' }} />
-          <img src={helloBachhon} alt="Hello Bachhon" className="w-full rounded-xl opacity-30 object-cover" style={{ maxHeight: '160px' }} />
+        <div className="flex-1 flex flex-col p-2 gap-2 min-h-0">
+          <img src={familyBusiness} alt="Family Business" className="w-full rounded-xl opacity-30 object-cover flex-1 min-h-0" />
+          {isDashboard && (
+            <>
+              <img src={mamlaLegalHai} alt="Maamla Legal Hai" className="w-full rounded-xl opacity-30 object-cover flex-1 min-h-0" />
+              <img src={helloBachhon} alt="Hello Bachhon" className="w-full rounded-xl opacity-30 object-cover flex-1 min-h-0" />
+            </>
+          )}
         </div>
       )}
     </div>

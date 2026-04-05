@@ -40,6 +40,40 @@ const ActivateAudience = () => {
   const [activationSuccess, setActivationSuccess] = useState<string | null>(null);
   const [isActivating, setIsActivating] = useState(false);
 
+  // Suppress state
+  const [suppressOpen, setSuppressOpen] = useState(false);
+  const [suppressDatasets, setSuppressDatasets] = useState<string[]>([]);
+  const [suppressPreview, setSuppressPreview] = useState<number | null>(null);
+  const [useSuppressed, setUseSuppressed] = useState(false);
+  const [isRunningPreview, setIsRunningPreview] = useState(false);
+
+  const netflixDatasets = [
+    { id: 'nf-sub', name: 'Netflix Subscriber Data', records: 28000000 },
+    { id: 'nf-app', name: 'App Engagement Data', records: 62000000 },
+  ];
+
+  const audienceSizeNum = matchedAudience?.sizeNum || 15000000;
+
+  const handleSuppressToggle = (datasetId: string) => {
+    setSuppressDatasets(prev => prev.includes(datasetId) ? prev.filter(d => d !== datasetId) : [...prev, datasetId]);
+    setSuppressPreview(null);
+    setUseSuppressed(false);
+  };
+
+  const handleRunPreview = () => {
+    setIsRunningPreview(true);
+    setTimeout(() => {
+      const overlapPct = 0.55 + Math.random() * 0.05;
+      const suppressed = Math.round(audienceSizeNum * (1 - overlapPct));
+      setSuppressPreview(suppressed);
+      setIsRunningPreview(false);
+    }, 1500);
+  };
+
+  const displayAudienceSize = useSuppressed && suppressPreview
+    ? `~${(suppressPreview / 1000000).toFixed(1)}M`
+    : audienceSize;
+
   const platforms: ActivationPlatform[] = [
     { id: 'meta-ads', name: 'Meta Ads', logo: metaLogo, description: 'Activate to Meta/Facebook & Instagram Ads',
       defaultConfig: { integType: 'Custom Audience', adAccountId: 'act_9847362510' },

@@ -13,6 +13,8 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import netflixLogo from '@/assets/netflix-logo.png';
 import familyBusiness from '@/assets/family-business.jpeg';
+import mamlaLegalHai from '@/assets/mamla-legal-hai.jpeg';
+import helloBachhon from '@/assets/hello-bachhon.jpeg';
 
 const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);

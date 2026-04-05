@@ -101,7 +101,7 @@ const CreateAudience = () => {
   }, [audienceId, matchedAudience]);
 
   const [queryRules, setQueryRules] = useState<QueryRule[]>(
-    queryConfig.conditions.map((c, i) => ({ id: String(i + 1), field: c.field, operator: c.operator, value: c.value, logic: c.logic || 'AND' as const }))
+    audienceId ? queryConfig.conditions.map((c, i) => ({ id: String(i + 1), field: c.field, operator: c.operator, value: c.value, logic: c.logic || 'AND' as const })) : [{ id: '1', field: '', operator: '', value: '', logic: 'AND' }]
   );
 
   // Derive highlighted partners from fields used in query rules

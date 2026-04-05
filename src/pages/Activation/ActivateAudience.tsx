@@ -133,7 +133,7 @@ const ActivateAudience = () => {
       <div className="bg-card rounded-xl p-6 neon-border">
         <h2 className="text-xl font-semibold text-foreground mb-1">{audienceName}</h2>
         <div className="flex items-center gap-6 text-sm text-muted-foreground mt-2">
-          <span>Size: <strong className="text-foreground">{audienceSize}</strong></span>
+          <span>Size: <strong className="text-foreground">{displayAudienceSize}</strong>{useSuppressed && suppressPreview && <span className="text-xs text-primary ml-1">(suppressed)</span>}</span>
           <span className="flex items-center gap-1"><User size={14} /> Created by: <strong className="text-foreground">Smit Srivastava</strong></span>
           <span>Created: <strong className="text-foreground">{matchedAudience?.created || '2026-03-15'}</strong></span>
         </div>

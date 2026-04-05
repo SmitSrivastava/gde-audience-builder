@@ -73,13 +73,10 @@ const Sidebar = () => {
 
       {/* Family Business Show image right after nav */}
       {!collapsed && (
-        <div className="p-3 mt-2">
-          <img
-            src={familyBusiness}
-            alt="Family Business"
-            className="w-full rounded-xl opacity-30 object-cover"
-            style={{ maxHeight: '260px' }}
-          />
+        <div className="p-3 mt-2 space-y-2">
+          <img src={familyBusiness} alt="Family Business" className="w-full rounded-xl opacity-30 object-cover" style={{ maxHeight: '160px' }} />
+          <img src={mamlaLegalHai} alt="Maamla Legal Hai" className="w-full rounded-xl opacity-30 object-cover" style={{ maxHeight: '160px' }} />
+          <img src={helloBachhon} alt="Hello Bachhon" className="w-full rounded-xl opacity-30 object-cover" style={{ maxHeight: '160px' }} />
         </div>
       )}
     </div>

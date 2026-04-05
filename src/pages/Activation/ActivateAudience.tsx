@@ -145,6 +145,66 @@ const ActivateAudience = () => {
         </div>
       </div>
 
+      {/* Suppress Netflix Audience */}
+      <div className="bg-card rounded-xl neon-border overflow-hidden">
+        <button onClick={() => setSuppressOpen(!suppressOpen)} className="w-full p-6 flex items-center justify-between text-left hover:bg-secondary/20 transition-colors">
+          <div>
+            <h3 className="text-lg font-semibold text-foreground">Suppress Netflix Audience</h3>
+            <p className="text-sm text-muted-foreground mt-1">Exclude existing Netflix users from the activation audience</p>
+          </div>
+          {suppressOpen ? <ChevronUp size={20} className="text-muted-foreground" /> : <ChevronDown size={20} className="text-muted-foreground" />}
+        </button>
+        {suppressOpen && (
+          <div className="px-6 pb-6 space-y-4 border-t border-border pt-4">
+            <p className="text-sm text-muted-foreground">Select Netflix datasets to suppress against:</p>
+            <div className="space-y-3">
+              {netflixDatasets.map(ds => (
+                <label key={ds.id} className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-secondary/20 cursor-pointer transition-colors">
+                  <Checkbox
+                    checked={suppressDatasets.includes(ds.id)}
+                    onCheckedChange={() => handleSuppressToggle(ds.id)}
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-foreground">{ds.name}</div>
+                    <div className="text-xs text-muted-foreground">{(ds.records / 1000000).toFixed(0)}M records</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+
+            {suppressDatasets.length > 0 && !suppressPreview && (
+              <button onClick={handleRunPreview} disabled={isRunningPreview}
+                className="px-4 py-2 rounded-lg bg-secondary text-foreground font-medium hover:bg-secondary/80 transition-colors">
+                {isRunningPreview ? 'Running Preview...' : 'Run Preview'}
+              </button>
+            )}
+
+            {suppressPreview && (
+              <div className="bg-secondary/30 rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Original Audience Size</span>
+                  <span className="text-sm font-semibold text-foreground">{audienceSize}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">After Suppression</span>
+                  <span className="text-sm font-semibold text-primary">~{(suppressPreview / 1000000).toFixed(1)}M</span>
+                </div>
+                <div className="flex gap-3 mt-2">
+                  <button onClick={() => setUseSuppressed(false)}
+                    className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${!useSuppressed ? 'bg-primary text-primary-foreground' : 'bg-secondary text-foreground hover:bg-secondary/80'}`}>
+                    Use Original Audience
+                  </button>
+                  <button onClick={() => setUseSuppressed(true)}
+                    className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${useSuppressed ? 'bg-primary text-primary-foreground' : 'bg-secondary text-foreground hover:bg-secondary/80'}`}>
+                    Use Suppressed Audience
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Platform Selection */}
       <div className="bg-card rounded-xl p-6 neon-border">
         <h3 className="text-lg font-semibold text-foreground mb-4">Select Destination Platform</h3>

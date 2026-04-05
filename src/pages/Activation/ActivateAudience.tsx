@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle, User } from 'lucide-react';
+import { CheckCircle, User, ChevronDown, ChevronUp } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { allAudiences } from '@/data/audiences';
 import { useSavedAudiences } from '@/contexts/SavedAudiencesContext';

@@ -20,10 +20,10 @@ const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const { role } = useAuth();
   const location = useLocation();
-  const isDashboard = location.pathname === '/';
+  const isDashboard = location.pathname === '/dashboard';
 
   const navItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
     { icon: Users, label: 'Segmentation', path: '/segmentation' },
     { icon: Zap, label: 'Enrichment', path: '/enrichment' },
     { icon: Target, label: 'Activation', path: '/activation' },

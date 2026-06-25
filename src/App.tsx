@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -13,6 +12,7 @@ import Segmentation from "./pages/Segmentation/Segmentation";
 import Enrichment from "./pages/Enrichment";
 import Activation from "./pages/Activation";
 import NotFound from "./pages/NotFound";
+import PlanningPage from "./pages/Planning/PlanningPage";
 import './index.css';
 
 const queryClient = new QueryClient();
@@ -26,13 +26,18 @@ const App = () => (
         <SavedAudiencesProvider>
           <BrowserRouter>
             <Routes>
-              <Route path="/" element={<Layout />}>
-                <Route index element={<Dashboard />} />
+              {/* New Planning page as first/index page (light theme, standalone) */}
+              <Route path="/" element={<PlanningPage />} />
+
+              {/* Netflix-themed app routes wrapped in Layout */}
+              <Route element={<Layout />}>
+                <Route path="dashboard" element={<Dashboard />} />
                 <Route path="admin/*" element={<Admin />} />
                 <Route path="segmentation/*" element={<Segmentation />} />
                 <Route path="enrichment/*" element={<Enrichment />} />
                 <Route path="activation/*" element={<Activation />} />
               </Route>
+
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

@@ -161,10 +161,14 @@ const HeroSection = () => {
   const [hovered, setHovered] = useState<string | null>(null);
   const [centerHover, setCenterHover] = useState(false);
 
-  // Card positions (clockwise starting top)
+  // Geometry — single source of truth so silhouette, ring, connectors, and cards all align.
+  const SIZE = 620;
+  const CENTER = SIZE / 2;
+  const CARD_W = 200;
+  const RADIUS = CENTER - 110; // leaves room so cards fit fully inside SIZE box
+
   const cardCount = 6;
-  const radius = 280; // pixel radius
-  // Angles in radians, starting at top, going clockwise
+  // Start at top, go clockwise.
   const angles = Array.from({ length: cardCount }, (_, i) => (-Math.PI / 2) + (i * (2 * Math.PI)) / cardCount);
 
   return (
@@ -229,20 +233,19 @@ const HeroSection = () => {
         </div>
 
         {/* Right: Audience ring */}
-        <div className="relative h-[640px] flex items-center justify-center">
-          <div className="relative" style={{ width: radius * 2 + 220, height: radius * 2 + 220 }}>
+        <div className="relative flex items-center justify-center">
+          <div className="relative" style={{ width: SIZE, height: SIZE }}>
             {/* SVG with rings + connectors */}
             <svg
               className="absolute inset-0 w-full h-full pointer-events-none"
-              viewBox={`0 0 ${radius * 2 + 220} ${radius * 2 + 220}`}
+              viewBox={`0 0 ${SIZE} ${SIZE}`}
               fill="none"
             >
-              {/* Outer + inner rings */}
               <motion.circle
-                cx={(radius * 2 + 220) / 2}
-                cy={(radius * 2 + 220) / 2}
-                r={radius - 40}
-                stroke="rgb(99 102 241 / 0.15)"
+                cx={CENTER}
+                cy={CENTER}
+                r={RADIUS}
+                stroke="rgb(99 102 241 / 0.18)"
                 strokeWidth={1}
                 strokeDasharray="3 6"
                 initial={{ pathLength: 0, opacity: 0 }}
@@ -250,9 +253,9 @@ const HeroSection = () => {
                 transition={{ duration: 1.4, ease, delay: 0.6 }}
               />
               <motion.circle
-                cx={(radius * 2 + 220) / 2}
-                cy={(radius * 2 + 220) / 2}
-                r={radius - 100}
+                cx={CENTER}
+                cy={CENTER}
+                r={RADIUS - 70}
                 stroke="rgb(99 102 241 / 0.12)"
                 strokeWidth={1}
                 initial={{ pathLength: 0, opacity: 0 }}
@@ -260,16 +263,14 @@ const HeroSection = () => {
                 transition={{ duration: 1.2, ease, delay: 0.8 }}
               />
 
-              {/* Connector lines from center to each card */}
+              {/* Connector lines from center silhouette out to each card */}
               {angles.map((angle, i) => {
-                const cx = (radius * 2 + 220) / 2;
-                const cy = (radius * 2 + 220) / 2;
-                const startR = 80;
-                const endR = radius - 30;
-                const x1 = cx + Math.cos(angle) * startR;
-                const y1 = cy + Math.sin(angle) * startR;
-                const x2 = cx + Math.cos(angle) * endR;
-                const y2 = cy + Math.sin(angle) * endR;
+                const startR = 78;
+                const endR = RADIUS - 8;
+                const x1 = CENTER + Math.cos(angle) * startR;
+                const y1 = CENTER + Math.sin(angle) * startR;
+                const x2 = CENTER + Math.cos(angle) * endR;
+                const y2 = CENTER + Math.sin(angle) * endR;
                 const isActive = hovered === signals[i].id || centerHover;
                 return (
                   <motion.line
@@ -287,71 +288,61 @@ const HeroSection = () => {
                 );
               })}
 
-              {/* Particles traveling on connectors when center hovered */}
-              {!reduce && centerHover && angles.map((angle, i) => {
-                const cx = (radius * 2 + 220) / 2;
-                const cy = (radius * 2 + 220) / 2;
-                return (
-                  <motion.circle
-                    key={`p-${i}`}
-                    r={3}
-                    fill="rgb(79 70 229)"
-                    initial={{ cx: cx + Math.cos(angle) * 80, cy: cy + Math.sin(angle) * 80, opacity: 0 }}
-                    animate={{
-                      cx: cx + Math.cos(angle) * (radius - 30),
-                      cy: cy + Math.sin(angle) * (radius - 30),
-                      opacity: [0, 1, 0],
-                    }}
-                    transition={{ duration: 1.2, ease, delay: i * 0.06 }}
-                  />
-                );
-              })}
+              {!reduce && centerHover && angles.map((angle, i) => (
+                <motion.circle
+                  key={`p-${i}`}
+                  r={3}
+                  fill="rgb(79 70 229)"
+                  initial={{ cx: CENTER + Math.cos(angle) * 78, cy: CENTER + Math.sin(angle) * 78, opacity: 0 }}
+                  animate={{
+                    cx: CENTER + Math.cos(angle) * (RADIUS - 8),
+                    cy: CENTER + Math.sin(angle) * (RADIUS - 8),
+                    opacity: [0, 1, 0],
+                  }}
+                  transition={{ duration: 1.2, ease, delay: i * 0.06 }}
+                />
+              ))}
             </svg>
 
-            {/* Center silhouette */}
+            {/* Center silhouette — anchored to exact geometric center */}
             <motion.div
               onMouseEnter={() => setCenterHover(true)}
               onMouseLeave={() => setCenterHover(false)}
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.9, ease, delay: 0.5 }}
-              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10"
+              className="absolute z-10"
+              style={{ left: CENTER, top: CENTER, transform: 'translate(-50%, -50%)' }}
             >
-              <div className="relative">
-                <motion.div
-                  animate={centerHover ? { scale: [1, 1.08, 1] } : {}}
-                  transition={{ duration: 1.2, ease }}
-                  className="w-44 h-44 rounded-full bg-gradient-to-br from-blue-50 via-indigo-100 to-blue-100 border border-indigo-200/50 flex items-center justify-center shadow-[0_10px_40px_-15px_rgb(99_102_241_/_0.4)]"
-                >
-                  <svg viewBox="0 0 120 120" className="w-28 h-28">
-                    <defs>
-                      <linearGradient id="silhouette-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#4f46e5" />
-                        <stop offset="100%" stopColor="#1e3a8a" />
-                      </linearGradient>
-                    </defs>
-                    {/* Person 1 facing right */}
-                    <g fill="url(#silhouette-grad)">
-                      <circle cx="42" cy="40" r="14" />
-                      <path d="M 22 110 Q 22 70 42 66 Q 62 70 62 110 Z" />
-                    </g>
-                    {/* Person 2 facing left */}
-                    <g fill="url(#silhouette-grad)" opacity="0.85">
-                      <circle cx="78" cy="40" r="14" />
-                      <path d="M 58 110 Q 58 70 78 66 Q 98 70 98 110 Z" />
-                    </g>
-                  </svg>
-                </motion.div>
-              </div>
+              <motion.div
+                animate={centerHover ? { scale: [1, 1.08, 1] } : {}}
+                transition={{ duration: 1.2, ease }}
+                className="w-44 h-44 rounded-full bg-gradient-to-br from-blue-50 via-indigo-100 to-blue-100 border border-indigo-200/50 flex items-center justify-center shadow-[0_10px_40px_-15px_rgb(99_102_241_/_0.4)]"
+              >
+                <svg viewBox="0 0 120 120" className="w-28 h-28">
+                  <defs>
+                    <linearGradient id="silhouette-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#4f46e5" />
+                      <stop offset="100%" stopColor="#1e3a8a" />
+                    </linearGradient>
+                  </defs>
+                  <g fill="url(#silhouette-grad)">
+                    <circle cx="42" cy="40" r="14" />
+                    <path d="M 22 110 Q 22 70 42 66 Q 62 70 62 110 Z" />
+                  </g>
+                  <g fill="url(#silhouette-grad)" opacity="0.85">
+                    <circle cx="78" cy="40" r="14" />
+                    <path d="M 58 110 Q 58 70 78 66 Q 98 70 98 110 Z" />
+                  </g>
+                </svg>
+              </motion.div>
             </motion.div>
 
             {/* Floating signal cards positioned around circle */}
             {signals.map((sig, i) => {
               const angle = angles[i];
-              const cx = (radius * 2 + 220) / 2;
-              const cy = (radius * 2 + 220) / 2;
-              const x = cx + Math.cos(angle) * (radius - 10);
-              const y = cy + Math.sin(angle) * (radius - 10);
+              const x = CENTER + Math.cos(angle) * RADIUS;
+              const y = CENTER + Math.sin(angle) * RADIUS;
               const isHover = hovered === sig.id;
               const dim = hovered !== null && hovered !== sig.id;
 
@@ -368,7 +359,7 @@ const HeroSection = () => {
                     left: x,
                     top: y,
                     transform: 'translate(-50%, -50%)',
-                    width: 200,
+                    width: CARD_W,
                   }}
                 >
                   <div className={`bg-white rounded-xl border ${isHover ? 'border-indigo-300 shadow-lg shadow-indigo-100/60' : 'border-slate-200 shadow-sm'} p-3.5 transition-all`}>

@@ -707,7 +707,7 @@ const AudienceScale = () => {
             <Info size={11} /> All numbers are approximate
           </span>
         </div>
-        <div className="mt-7 grid grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        <div className="mt-7 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
           {sectors.map((s, i) => (
             <motion.div
               key={s.name}
@@ -715,16 +715,16 @@ const AudienceScale = () => {
               animate={inView ? { opacity: 1, y: 0 } : {}}
               transition={{ duration: 0.5, ease, delay: 0.1 + i * 0.07 }}
               whileHover={{ y: -2 }}
-              className="group rounded-xl border border-slate-200 hover:border-slate-300 hover:shadow-md p-3 bg-white transition-all relative"
+              className="group rounded-xl border border-slate-200 hover:border-blue-300 hover:shadow-md hover:shadow-blue-100/40 p-5 bg-white transition-all relative flex flex-col items-start"
             >
-              <div className="text-[11px] text-slate-500 font-medium whitespace-pre-line leading-tight min-h-[28px]">{s.name}</div>
-              <div className="mt-2">
-                <Sparkline color={s.color} animate={inView} />
+              <div
+                className="text-4xl font-extrabold tabular-nums tracking-tight"
+                style={{ color: s.color }}
+              >
+                <CountUp to={s.value} suffix="M" duration={1.6} />
               </div>
-              <div className="mt-1 text-lg font-bold text-slate-900 tabular-nums">
-                <CountUp to={s.value} suffix="M" />
-              </div>
-              <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded bg-slate-900 text-white text-[10px] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+              <div className="mt-2 text-[11px] text-slate-500 font-medium uppercase tracking-wide whitespace-pre-line leading-tight">{s.name}</div>
+              <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded bg-slate-900 text-white text-[10px] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
                 Planning universe
               </span>
             </motion.div>

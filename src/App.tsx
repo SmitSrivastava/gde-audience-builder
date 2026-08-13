@@ -30,6 +30,9 @@ const App = () => (
               {/* New Planning page as first/index page (light theme, standalone) */}
               <Route path="/" element={<PlanningPage />} />
 
+              {/* Partner usage dashboard (light theme, standalone) */}
+              <Route path="/partners/swiggy" element={<SwiggyPartnerDashboard />} />
+
               {/* Netflix-themed app routes wrapped in Layout */}
               <Route element={<Layout />}>
                 <Route path="dashboard" element={<Dashboard />} />

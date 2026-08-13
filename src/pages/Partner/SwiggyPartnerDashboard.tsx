@@ -474,8 +474,8 @@ const SwiggyPartnerDashboard = () => {
         </div>
 
         {/* Row 3 */}
-        <div className="grid grid-cols-1 lg:grid-cols-20 gap-6" style={{ gridTemplateColumns: undefined }}>
-          <div className="lg:col-span-13 col-span-1" style={{ gridColumn: 'span 13 / span 13' }}>
+        <div className="grid grid-cols-1 lg:grid-cols-[1.85fr_1fr] gap-6">
+          <div>
             <Card
               innerRef={campaignRef}
               highlight={highlight === 'campaigns'}
@@ -508,7 +508,7 @@ const SwiggyPartnerDashboard = () => {
             </Card>
           </div>
 
-          <div style={{ gridColumn: 'span 7 / span 7' }}>
+          <div>
             <Card
               innerRef={govRef}
               highlight={highlight === 'gov'}

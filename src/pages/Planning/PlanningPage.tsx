@@ -59,7 +59,7 @@ const PlanningSidebar = () => {
     { icon: BarChart3, label: 'Planning', active: true },
     { icon: Radio, label: 'Signals' },
     { icon: UsersRound, label: 'Audiences', to: '/segmentation' },
-    { icon: Handshake, label: 'Partners' },
+    { icon: Handshake, label: 'Partners', to: '/partners/swiggy' },
     { icon: TrendingUp, label: 'Analytics' },
     { icon: Megaphone, label: 'Activations', to: '/activation' },
     { icon: FileBarChart, label: 'Reports' },

@@ -13,6 +13,7 @@ import Enrichment from "./pages/Enrichment";
 import Activation from "./pages/Activation";
 import NotFound from "./pages/NotFound";
 import PlanningPage from "./pages/Planning/PlanningPage";
+import SwiggyPartnerDashboard from "./pages/Partner/SwiggyPartnerDashboard";
 import './index.css';
 
 const queryClient = new QueryClient();
@@ -28,6 +29,9 @@ const App = () => (
             <Routes>
               {/* New Planning page as first/index page (light theme, standalone) */}
               <Route path="/" element={<PlanningPage />} />
+
+              {/* Partner usage dashboard (light theme, standalone) */}
+              <Route path="/partners/swiggy" element={<SwiggyPartnerDashboard />} />
 
               {/* Netflix-themed app routes wrapped in Layout */}
               <Route element={<Layout />}>

@@ -13,6 +13,7 @@ import Enrichment from "./pages/Enrichment";
 import Activation from "./pages/Activation";
 import NotFound from "./pages/NotFound";
 import PlanningPage from "./pages/Planning/PlanningPage";
+import SwiggyPartnerDashboard from "./pages/Partner/SwiggyPartnerDashboard";
 import './index.css';
 
 const queryClient = new QueryClient();

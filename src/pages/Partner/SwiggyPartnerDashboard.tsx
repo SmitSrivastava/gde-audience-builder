@@ -516,6 +516,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
     platform !== 'All' && { label: `Platform: ${platform}`, clear: () => setPlatform('All') },
     usage !== 'All' && { label: `Usage: ${usage}`, clear: () => setUsage('All') },
     governance !== 'All' && { label: `Governance: ${governance}`, clear: () => setGovernance('All') },
+    brandFilter !== 'All' && { label: `Brand: ${brandFilter}`, clear: () => setBrandFilter('All') },
   ].filter(Boolean) as { label: string; clear: () => void }[];
 
   return (

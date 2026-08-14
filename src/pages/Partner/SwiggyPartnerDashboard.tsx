@@ -798,6 +798,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
             </div>
           )}
         </Section>
+        </div>
 
         {/* Footer */}
         <footer className="rounded-2xl border border-slate-200 bg-white p-5 text-xs leading-relaxed text-slate-500">

@@ -973,6 +973,91 @@ const SwiggyPartnerDashboard: React.FC = () => {
                   </p>
                 </>
               )}
+
+              {drawer.type === 'brand' && (
+                <>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Brand summary</p>
+                  <Row label="Brand" value={drawer.brand.name} />
+                  <Row label="Approved account / advertiser labels" value={drawer.brand.accounts.join(', ')} />
+                  <Row label="Datasets used" value={String(drawer.brand.datasets)} />
+                  <Row label="Cohorts used" value={String(drawer.brand.cohorts)} />
+                  <Row label="Platforms used" value={<span className="inline-flex flex-wrap justify-end gap-1">{drawer.brand.platforms.map((p) => <Chip key={p} label={p} className={platformChip(p)} />)}</span>} />
+                  <Row label="Platform matched size" value={m(drawer.brand.matched)} />
+                  <Row label="Campaigns / line items" value={String(drawer.brand.campaigns)} />
+                  <Row label="Impressions served" value={m(drawer.brand.impressions)} />
+                  <Row label="Status" value={<Chip label={drawer.brand.status} />} />
+
+                  <p className="mt-5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dataset + cohort usage for brand</p>
+                  <div className="mt-2 overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="w-full min-w-[640px] text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50 text-left uppercase tracking-wide text-slate-500">
+                          <th className="px-3 py-2 font-semibold">Dataset</th>
+                          <th className="px-3 py-2 font-semibold">Cohort</th>
+                          <th className="px-3 py-2 font-semibold">Category</th>
+                          <th className="px-3 py-2 font-semibold">Platforms</th>
+                          <th className="px-3 py-2 font-semibold">Matched</th>
+                          <th className="px-3 py-2 font-semibold">Impressions</th>
+                          <th className="px-3 py-2 font-semibold">Usage Type</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {drawer.brand.usage.map((u) => (
+                          <tr key={u.dataset + u.cohort} className="border-b border-slate-100 last:border-0">
+                            <td className="px-3 py-2 text-slate-600">{u.dataset}</td>
+                            <td className="px-3 py-2 font-medium text-slate-900">{u.cohort}</td>
+                            <td className="px-3 py-2 text-slate-600">{u.category}</td>
+                            <td className="px-3 py-2">{u.platforms.join(', ')}</td>
+                            <td className="px-3 py-2 font-semibold">{m(u.matched)}</td>
+                            <td className="px-3 py-2">{m(u.impressions)}</td>
+                            <td className="px-3 py-2">{u.usageType}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <p className="mt-5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Platform breakdown for brand</p>
+                  <div className="mt-2 overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="w-full min-w-[760px] text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50 text-left uppercase tracking-wide text-slate-500">
+                          <th className="px-3 py-2 font-semibold">Platform</th>
+                          <th className="px-3 py-2 font-semibold">Platform Audience ID</th>
+                          <th className="px-3 py-2 font-semibold">Dataset</th>
+                          <th className="px-3 py-2 font-semibold">Cohort</th>
+                          <th className="px-3 py-2 font-semibold">Account / Advertiser</th>
+                          <th className="px-3 py-2 font-semibold">Matched</th>
+                          <th className="px-3 py-2 font-semibold">Campaigns</th>
+                          <th className="px-3 py-2 font-semibold">Impressions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {drawer.brand.platformRows.map((r) => (
+                          <tr key={r.audienceId + r.cohort} className="border-b border-slate-100 last:border-0">
+                            <td className="px-3 py-2"><Chip label={r.platform} className={platformChip(r.platform)} /></td>
+                            <td className="px-3 py-2 font-mono text-[11px] text-slate-700">{r.audienceId}</td>
+                            <td className="px-3 py-2 text-slate-600">{r.dataset}</td>
+                            <td className="px-3 py-2 text-slate-600">{r.cohort}</td>
+                            <td className="px-3 py-2 text-slate-600">{r.account}</td>
+                            <td className="px-3 py-2 font-semibold">{m(r.matched)}</td>
+                            <td className="px-3 py-2">{r.campaigns}</td>
+                            <td className="px-3 py-2">{m(r.impressions)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-1 gap-2">
+                    <button onClick={() => { setBrandFilter(drawer.brand.name); setDrawer(null); scrollTo('campaigns'); }} className="rounded-lg bg-orange-500 px-3 py-2 text-sm font-semibold text-white hover:bg-orange-600">View Campaign Usage For Brand</button>
+                    <button onClick={() => { setBrandFilter('All'); setDrawer(null); }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Clear Brand Filter</button>
+                  </div>
+                  <p className="mt-4 rounded-lg bg-slate-50 p-3 text-[11px] text-slate-500">
+                    Brand usage is derived from the approved account permission map. Spend, clicks, conversions and revenue are not exposed.
+                  </p>
+                </>
+              )}
             </div>
           </aside>
         </div>

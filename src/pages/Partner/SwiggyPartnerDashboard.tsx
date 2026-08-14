@@ -362,6 +362,7 @@ type DrawerState =
   | { type: 'cohort'; cohort: Cohort }
   | { type: 'campaign'; row: CampaignRow }
   | { type: 'governance'; alert: Alert }
+  | { type: 'brand'; brand: Brand }
   | { type: 'kpi'; title: string; rows: { label: string; value: string }[]; note?: string }
   | null;
 

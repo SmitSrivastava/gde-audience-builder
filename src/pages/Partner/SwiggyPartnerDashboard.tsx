@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   X, ArrowLeft, Database, Layers, Fingerprint, UploadCloud, Users2, Percent,
-  Megaphone, BarChart3, ShieldAlert, ChevronRight, ChevronDown, Filter,
+  Megaphone, BarChart3, ShieldAlert, ChevronRight, ChevronDown, Filter, Building2,
 } from 'lucide-react';
 
 /* ============================ Data model ============================ */

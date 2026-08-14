@@ -612,6 +612,12 @@ const SwiggyPartnerDashboard: React.FC = () => {
             <Select label="Date Range" value={dateRange} options={['Last 30 days', 'Last 90 days', 'Quarter to date', 'Year to date']} onChange={setDateRange} />
             <Select label="Dataset" value={dataset} options={datasetOptions} onChange={setDataset} />
             <Select label="Cohort" value={cohortFilter} options={cohortOptions} onChange={setCohortFilter} />
+            <Select
+              label="Brand"
+              value={brandFilter}
+              options={['All', ...brands.map((b) => b.name)]}
+              onChange={(v) => { setBrandFilter(v); setExpandedBrand(v === 'All' ? null : v); setExpandedBrandCohort(null); }}
+            />
             <Select label="Platform" value={platform} options={['All', ...PLATFORMS]} onChange={setPlatform} />
             <Select label="Usage Status" value={usage} options={['All', 'Pushed', 'Matched', 'Used', 'Not Used']} onChange={setUsage} />
             <Select label="Governance Status" value={governance} options={['All', 'Clear', 'Under Review', 'Pending Refresh', 'Expired']} onChange={setGovernance} />

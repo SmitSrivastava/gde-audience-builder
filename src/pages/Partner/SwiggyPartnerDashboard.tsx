@@ -878,7 +878,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
       {drawer && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]" onClick={() => setDrawer(null)} />
-          <aside className="relative h-full w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
+          <aside className={`relative h-full w-full ${drawer.type === 'brand' ? 'max-w-3xl' : 'max-w-md'} overflow-y-auto border-l border-slate-200 bg-white shadow-2xl`}>
             <div className="sticky top-0 flex items-start justify-between gap-4 border-b border-slate-100 bg-white px-5 py-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-600">

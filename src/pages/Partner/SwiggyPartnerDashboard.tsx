@@ -154,14 +154,18 @@ const alerts: Alert[] = [
 
 /* ==================== Brand mapping (derived from account_permission_map) ==================== */
 
-type BrandUsageRow = {
-  dataset: string; cohort: string; category: string; platforms: Platform[];
-  matched: number; impressions: number; usageType: string;
+type BrandInstance = {
+  platform: Platform; audienceId: string; account: string;
+  pushed: number; matched: number; rate: number;
+  usageStatus: 'Used' | 'Not Used'; campaigns: number; impressions: number;
 };
 
-type BrandPlatformRow = {
-  platform: Platform; audienceId: string; dataset: string; cohort: string;
-  account: string; matched: number; campaigns: number; impressions: number;
+type BrandUsageRow = {
+  dataset: string; cohort: string; category: string;
+  approvedIds: number; platformsPushed: Platform[];
+  matched: number; matchRate: number; campaigns: number; impressions: number;
+  status: 'Active' | 'Matched' | 'Completed';
+  instances: BrandInstance[];
 };
 
 type Brand = {
@@ -177,99 +181,146 @@ type Brand = {
   /** cohort + platform pairs this brand is approved on — used to filter the dashboard */
   pairs: { cohort: string; platform: Platform }[];
   usage: BrandUsageRow[];
-  platformRows: BrandPlatformRow[];
 };
 
 const brands: Brand[] = [
   {
     name: 'Coca-Cola',
-    accounts: ['Coca-Cola Approved Advertiser A', 'Coca-Cola Approved Account B', 'Coca-Cola Approved Account C'],
+    accounts: ['Coca-Cola Approved DV360 Advertiser A', 'Coca-Cola Approved Google Account B', 'Coca-Cola Approved Meta Account C'],
     datasets: 2, cohorts: 4, platforms: ['Google Ads', 'DV360', 'Meta'],
     matched: 8.7, campaigns: 5, impressions: 46.2, status: 'Active',
     pairs: [
       { cohort: 'High-Intent Grocery Buyers', platform: 'DV360' },
       { cohort: 'High-Intent Grocery Buyers', platform: 'Google Ads' },
       { cohort: 'Snacks & Beverage Buyers', platform: 'Meta' },
-      { cohort: 'Snacks & Beverage Buyers', platform: 'Google Ads' },
+      { cohort: 'Snacks & Beverage Buyers', platform: 'DV360' },
       { cohort: 'Premium Basket Shoppers', platform: 'Meta' },
     ],
     usage: [
-      { dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', category: 'Q-Commerce', platforms: ['DV360', 'Google Ads'], matched: 3.8, impressions: 24.8, usageType: 'Targeting' },
-      { dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', category: 'Category Buyers', platforms: ['DV360', 'Meta'], matched: 2.7, impressions: 13.1, usageType: 'Targeting' },
-      { dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', category: 'Commerce Value', platforms: ['Meta'], matched: 1.2, impressions: 8.3, usageType: 'Lookalike Seed' },
-    ],
-    platformRows: [
-      { platform: 'DV360', audienceId: 'DV-AUD-77812', dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', account: 'Coca-Cola Approved Advertiser A', matched: 2.3, campaigns: 2, impressions: 18.6 },
-      { platform: 'Google Ads', audienceId: 'GA-AUD-10421', dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', account: 'Coca-Cola Approved Account B', matched: 1.5, campaigns: 1, impressions: 6.2 },
-      { platform: 'Meta', audienceId: 'META-AUD-55210', dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', account: 'Coca-Cola Approved Account C', matched: 1.2, campaigns: 2, impressions: 13.1 },
+      {
+        dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', category: 'Q-Commerce',
+        approvedIds: 8.5, platformsPushed: ['Google Ads', 'DV360'], matched: 3.8, matchRate: 45, campaigns: 3, impressions: 24.8, status: 'Active',
+        instances: [
+          { platform: 'Google Ads', audienceId: 'GA-AUD-10421', account: 'Coca-Cola Approved Google Account B', pushed: 8.5, matched: 1.5, rate: 18, usageStatus: 'Used', campaigns: 1, impressions: 6.2 },
+          { platform: 'DV360', audienceId: 'DV-AUD-77812', account: 'Coca-Cola Approved DV360 Advertiser A', pushed: 8.5, matched: 2.3, rate: 27, usageStatus: 'Used', campaigns: 2, impressions: 18.6 },
+        ],
+      },
+      {
+        dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', category: 'Category Buyers',
+        approvedIds: 7.1, platformsPushed: ['DV360', 'Meta'], matched: 2.7, matchRate: 38, campaigns: 2, impressions: 13.1, status: 'Active',
+        instances: [
+          { platform: 'DV360', audienceId: 'DV-AUD-44021', account: 'Coca-Cola Approved DV360 Advertiser A', pushed: 7.1, matched: 1.5, rate: 21, usageStatus: 'Used', campaigns: 1, impressions: 9.6 },
+          { platform: 'Meta', audienceId: 'META-AUD-55210', account: 'Coca-Cola Approved Meta Account C', pushed: 7.1, matched: 1.2, rate: 17, usageStatus: 'Used', campaigns: 1, impressions: 3.5 },
+        ],
+      },
+      {
+        dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', category: 'Commerce Value',
+        approvedIds: 6.2, platformsPushed: ['Meta'], matched: 1.2, matchRate: 19, campaigns: 1, impressions: 8.3, status: 'Active',
+        instances: [
+          { platform: 'Meta', audienceId: 'META-AUD-33412', account: 'Coca-Cola Approved Meta Account C', pushed: 6.2, matched: 1.2, rate: 19, usageStatus: 'Used', campaigns: 1, impressions: 8.3 },
+        ],
+      },
     ],
   },
   {
     name: 'Britannia',
-    accounts: ['Britannia Approved Advertiser A', 'Britannia Approved Account D'],
+    accounts: ['Britannia Approved DV360 Advertiser A', 'Britannia Approved Meta Account B'],
     datasets: 3, cohorts: 5, platforms: ['DV360', 'Meta'],
     matched: 9.4, campaigns: 6, impressions: 51.8, status: 'Active',
     pairs: [
-      { cohort: 'High-Intent Grocery Buyers', platform: 'DV360' },
-      { cohort: 'Premium Basket Shoppers', platform: 'DV360' },
-      { cohort: 'Premium Basket Shoppers', platform: 'Meta' },
       { cohort: 'Frequent Instamart Users', platform: 'DV360' },
-      { cohort: 'Monthly High Spenders', platform: 'DV360' },
+      { cohort: 'Frequent Instamart Users', platform: 'Meta' },
+      { cohort: 'Snacks & Beverage Buyers', platform: 'DV360' },
+      { cohort: 'Premium Basket Shoppers', platform: 'Meta' },
       { cohort: 'Lapsed Grocery Buyers', platform: 'Meta' },
     ],
     usage: [
-      { dataset: 'Instamart Grocery Behaviour', cohort: 'Frequent Instamart Users', category: 'Frequency', platforms: ['DV360'], matched: 3.5, impressions: 12.3, usageType: 'Targeting' },
-      { dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', category: 'Commerce Value', platforms: ['DV360', 'Meta'], matched: 3.9, impressions: 22.6, usageType: 'Targeting' },
-      { dataset: 'Instamart High-Value Buyers', cohort: 'Monthly High Spenders', category: 'High Value', platforms: ['DV360'], matched: 2.0, impressions: 16.9, usageType: 'Targeting' },
-    ],
-    platformRows: [
-      { platform: 'DV360', audienceId: 'DV-AUD-20990', dataset: 'Instamart Grocery Behaviour', cohort: 'Frequent Instamart Users', account: 'Britannia Approved Advertiser A', matched: 3.5, campaigns: 2, impressions: 12.3 },
-      { platform: 'DV360', audienceId: 'DV-AUD-33110', dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', account: 'Britannia Approved Advertiser A', matched: 2.4, campaigns: 2, impressions: 11.2 },
-      { platform: 'Meta', audienceId: 'META-AUD-33412', dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', account: 'Britannia Approved Account D', matched: 1.5, campaigns: 1, impressions: 11.4 },
-      { platform: 'DV360', audienceId: 'DV-AUD-66190', dataset: 'Instamart High-Value Buyers', cohort: 'Monthly High Spenders', account: 'Britannia Approved Advertiser A', matched: 2.0, campaigns: 1, impressions: 16.9 },
+      {
+        dataset: 'Instamart Grocery Behaviour', cohort: 'Frequent Instamart Users', category: 'Frequency',
+        approvedIds: 11.8, platformsPushed: ['DV360', 'Meta'], matched: 4.2, matchRate: 36, campaigns: 3, impressions: 21.5, status: 'Active',
+        instances: [
+          { platform: 'DV360', audienceId: 'DV-AUD-88219', account: 'Britannia Approved DV360 Advertiser A', pushed: 11.8, matched: 2.5, rate: 21, usageStatus: 'Used', campaigns: 2, impressions: 15.4 },
+          { platform: 'Meta', audienceId: 'META-AUD-77102', account: 'Britannia Approved Meta Account B', pushed: 11.8, matched: 1.7, rate: 14, usageStatus: 'Used', campaigns: 1, impressions: 6.1 },
+        ],
+      },
+      {
+        dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', category: 'Category Buyers',
+        approvedIds: 7.1, platformsPushed: ['DV360'], matched: 1.8, matchRate: 25, campaigns: 1, impressions: 9.6, status: 'Active',
+        instances: [
+          { platform: 'DV360', audienceId: 'DV-AUD-44021', account: 'Britannia Approved DV360 Advertiser A', pushed: 7.1, matched: 1.8, rate: 25, usageStatus: 'Used', campaigns: 1, impressions: 9.6 },
+        ],
+      },
+      {
+        dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', category: 'Commerce Value',
+        approvedIds: 6.2, platformsPushed: ['Meta'], matched: 2.1, matchRate: 34, campaigns: 2, impressions: 13.8, status: 'Active',
+        instances: [
+          { platform: 'Meta', audienceId: 'META-AUD-33412', account: 'Britannia Approved Meta Account B', pushed: 6.2, matched: 2.1, rate: 34, usageStatus: 'Used', campaigns: 2, impressions: 13.8 },
+        ],
+      },
+      {
+        dataset: 'Instamart Grocery Behaviour', cohort: 'Lapsed Grocery Buyers', category: 'Reactivation',
+        approvedIds: 5.5, platformsPushed: ['Meta'], matched: 1.3, matchRate: 24, campaigns: 1, impressions: 6.9, status: 'Active',
+        instances: [
+          { platform: 'Meta', audienceId: 'META-AUD-90176', account: 'Britannia Approved Meta Account B', pushed: 5.5, matched: 1.3, rate: 24, usageStatus: 'Used', campaigns: 1, impressions: 6.9 },
+        ],
+      },
     ],
   },
   {
     name: 'HUL',
-    accounts: ['HUL Approved Advertiser A', 'HUL Approved Account C'],
+    accounts: ['HUL Approved DV360 Advertiser A', 'HUL Approved Google Account C'],
     datasets: 1, cohorts: 2, platforms: ['Google Ads', 'DV360'],
     matched: 4.1, campaigns: 3, impressions: 18.5, status: 'Active',
     pairs: [
       { cohort: 'Frequent Instamart Users', platform: 'Google Ads' },
-      { cohort: 'High-Intent Grocery Buyers', platform: 'Google Ads' },
       { cohort: 'High-Intent Grocery Buyers', platform: 'DV360' },
     ],
     usage: [
-      { dataset: 'Instamart Grocery Behaviour', cohort: 'Frequent Instamart Users', category: 'Frequency', platforms: ['Google Ads'], matched: 2.4, impressions: 11.3, usageType: 'Targeting' },
-      { dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', category: 'Q-Commerce', platforms: ['Google Ads', 'DV360'], matched: 1.7, impressions: 7.2, usageType: 'Targeting' },
-    ],
-    platformRows: [
-      { platform: 'Google Ads', audienceId: 'GA-AUD-20219', dataset: 'Instamart Grocery Behaviour', cohort: 'Frequent Instamart Users', account: 'HUL Approved Account C', matched: 2.4, campaigns: 2, impressions: 11.3 },
-      { platform: 'DV360', audienceId: 'DV-AUD-77812', dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', account: 'HUL Approved Advertiser A', matched: 1.7, campaigns: 1, impressions: 7.2 },
+      {
+        dataset: 'Instamart Grocery Behaviour', cohort: 'Frequent Instamart Users', category: 'Frequency',
+        approvedIds: 11.8, platformsPushed: ['Google Ads'], matched: 2.4, matchRate: 20, campaigns: 2, impressions: 11.3, status: 'Active',
+        instances: [
+          { platform: 'Google Ads', audienceId: 'GA-AUD-20219', account: 'HUL Approved Google Account C', pushed: 11.8, matched: 2.4, rate: 20, usageStatus: 'Used', campaigns: 2, impressions: 11.3 },
+        ],
+      },
+      {
+        dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', category: 'Q-Commerce',
+        approvedIds: 8.5, platformsPushed: ['DV360'], matched: 1.7, matchRate: 20, campaigns: 1, impressions: 7.2, status: 'Active',
+        instances: [
+          { platform: 'DV360', audienceId: 'DV-AUD-77812', account: 'HUL Approved DV360 Advertiser A', pushed: 8.5, matched: 1.7, rate: 20, usageStatus: 'Used', campaigns: 1, impressions: 7.2 },
+        ],
+      },
     ],
   },
   {
     name: 'Mondelez',
-    accounts: ['Mondelez Approved Advertiser B'],
+    accounts: ['Mondelez Approved Meta Account B', 'Mondelez Approved DV360 Advertiser B'],
     datasets: 1, cohorts: 2, platforms: ['Meta', 'DV360'],
     matched: 3.8, campaigns: 2, impressions: 13.6, status: 'Completed',
     pairs: [
       { cohort: 'Lapsed Grocery Buyers', platform: 'Meta' },
-      { cohort: 'Premium Basket Shoppers', platform: 'Meta' },
       { cohort: 'Premium Basket Shoppers', platform: 'DV360' },
     ],
     usage: [
-      { dataset: 'Instamart Grocery Behaviour', cohort: 'Lapsed Grocery Buyers', category: 'Reactivation', platforms: ['Meta'], matched: 1.5, impressions: 7.2, usageType: 'Retargeting' },
-      { dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', category: 'Commerce Value', platforms: ['Meta', 'DV360'], matched: 2.3, impressions: 6.4, usageType: 'Lookalike Seed' },
-    ],
-    platformRows: [
-      { platform: 'Meta', audienceId: 'META-AUD-90176', dataset: 'Instamart Grocery Behaviour', cohort: 'Lapsed Grocery Buyers', account: 'Mondelez Approved Advertiser B', matched: 1.5, campaigns: 1, impressions: 7.2 },
-      { platform: 'Meta', audienceId: 'META-AUD-33412', dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', account: 'Mondelez Approved Advertiser B', matched: 2.3, campaigns: 1, impressions: 6.4 },
+      {
+        dataset: 'Instamart Grocery Behaviour', cohort: 'Lapsed Grocery Buyers', category: 'Reactivation',
+        approvedIds: 5.5, platformsPushed: ['Meta'], matched: 1.5, matchRate: 27, campaigns: 1, impressions: 7.2, status: 'Completed',
+        instances: [
+          { platform: 'Meta', audienceId: 'META-AUD-90176', account: 'Mondelez Approved Meta Account B', pushed: 5.5, matched: 1.5, rate: 27, usageStatus: 'Used', campaigns: 1, impressions: 7.2 },
+        ],
+      },
+      {
+        dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', category: 'Commerce Value',
+        approvedIds: 6.2, platformsPushed: ['DV360'], matched: 2.3, matchRate: 37, campaigns: 1, impressions: 6.4, status: 'Completed',
+        instances: [
+          { platform: 'DV360', audienceId: 'DV-AUD-33110', account: 'Mondelez Approved DV360 Advertiser B', pushed: 6.2, matched: 2.3, rate: 37, usageStatus: 'Used', campaigns: 1, impressions: 6.4 },
+        ],
+      },
     ],
   },
   {
     name: 'Nestlé',
-    accounts: ['Nestlé Approved Advertiser A', 'Nestlé Approved Account B'],
+    accounts: ['Nestlé Approved Google Account A', 'Nestlé Approved Meta Account B'],
     datasets: 2, cohorts: 3, platforms: ['Google Ads', 'Meta'],
     matched: 5.8, campaigns: 4, impressions: 12.5, status: 'Active',
     pairs: [
@@ -278,16 +329,25 @@ const brands: Brand[] = [
       { cohort: 'Lapsed Grocery Buyers', platform: 'Google Ads' },
     ],
     usage: [
-      { dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', category: 'Category Buyers', platforms: ['Google Ads', 'Meta'], matched: 4.0, impressions: 8.4, usageType: 'Targeting' },
-      { dataset: 'Instamart Grocery Behaviour', cohort: 'Lapsed Grocery Buyers', category: 'Reactivation', platforms: ['Google Ads'], matched: 1.8, impressions: 4.1, usageType: 'Retargeting' },
-    ],
-    platformRows: [
-      { platform: 'Google Ads', audienceId: 'GA-AUD-31877', dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', account: 'Nestlé Approved Advertiser A', matched: 2.2, campaigns: 2, impressions: 4.5 },
-      { platform: 'Meta', audienceId: 'META-AUD-44021', dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', account: 'Nestlé Approved Account B', matched: 1.8, campaigns: 1, impressions: 3.9 },
-      { platform: 'Google Ads', audienceId: 'GA-AUD-51120', dataset: 'Instamart Grocery Behaviour', cohort: 'Lapsed Grocery Buyers', account: 'Nestlé Approved Advertiser A', matched: 1.8, campaigns: 1, impressions: 4.1 },
+      {
+        dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', category: 'Category Buyers',
+        approvedIds: 7.1, platformsPushed: ['Google Ads', 'Meta'], matched: 4.0, matchRate: 56, campaigns: 3, impressions: 8.4, status: 'Active',
+        instances: [
+          { platform: 'Google Ads', audienceId: 'GA-AUD-31877', account: 'Nestlé Approved Google Account A', pushed: 7.1, matched: 2.2, rate: 31, usageStatus: 'Used', campaigns: 2, impressions: 4.5 },
+          { platform: 'Meta', audienceId: 'META-AUD-44021', account: 'Nestlé Approved Meta Account B', pushed: 7.1, matched: 1.8, rate: 25, usageStatus: 'Used', campaigns: 1, impressions: 3.9 },
+        ],
+      },
+      {
+        dataset: 'Instamart Grocery Behaviour', cohort: 'Lapsed Grocery Buyers', category: 'Reactivation',
+        approvedIds: 5.5, platformsPushed: ['Google Ads'], matched: 1.8, matchRate: 33, campaigns: 1, impressions: 4.1, status: 'Active',
+        instances: [
+          { platform: 'Google Ads', audienceId: 'GA-AUD-51120', account: 'Nestlé Approved Google Account A', pushed: 5.5, matched: 1.8, rate: 33, usageStatus: 'Used', campaigns: 1, impressions: 4.1 },
+        ],
+      },
     ],
   },
 ];
+
 
 /* ============================ Helpers ============================ */
 
@@ -362,7 +422,6 @@ type DrawerState =
   | { type: 'cohort'; cohort: Cohort }
   | { type: 'campaign'; row: CampaignRow }
   | { type: 'governance'; alert: Alert }
-  | { type: 'brand'; brand: Brand }
   | { type: 'kpi'; title: string; rows: { label: string; value: string }[]; note?: string }
   | null;
 
@@ -387,6 +446,8 @@ const SwiggyPartnerDashboard: React.FC = () => {
   const [brandFilter, setBrandFilter] = useState<string>('All');
 
   const [expanded, setExpanded] = useState<string | null>('C1');
+  const [expandedBrand, setExpandedBrand] = useState<string | null>(null);
+  const [expandedBrandCohort, setExpandedBrandCohort] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<DrawerState>(null);
 
   const datasetOptions = ['All', ...Array.from(new Set(cohorts.map((c) => c.dataset)))];
@@ -551,6 +612,12 @@ const SwiggyPartnerDashboard: React.FC = () => {
             <Select label="Date Range" value={dateRange} options={['Last 30 days', 'Last 90 days', 'Quarter to date', 'Year to date']} onChange={setDateRange} />
             <Select label="Dataset" value={dataset} options={datasetOptions} onChange={setDataset} />
             <Select label="Cohort" value={cohortFilter} options={cohortOptions} onChange={setCohortFilter} />
+            <Select
+              label="Brand"
+              value={brandFilter}
+              options={['All', ...brands.map((b) => b.name)]}
+              onChange={(v) => { setBrandFilter(v); setExpandedBrand(v === 'All' ? null : v); setExpandedBrandCohort(null); }}
+            />
             <Select label="Platform" value={platform} options={['All', ...PLATFORMS]} onChange={setPlatform} />
             <Select label="Usage Status" value={usage} options={['All', 'Pushed', 'Matched', 'Used', 'Not Used']} onChange={setUsage} />
             <Select label="Governance Status" value={governance} options={['All', 'Clear', 'Under Review', 'Pending Refresh', 'Expired']} onChange={setGovernance} />
@@ -730,11 +797,11 @@ const SwiggyPartnerDashboard: React.FC = () => {
         </Section>
         </div>
 
-        {/* Section 3 — Brand-Wise Usage */}
+        {/* Section 3 — Brand-Wise Usage (inline expandable) */}
         <Section
           id="brands"
           title="Brand-Wise Usage"
-          subtitle="See which approved brands have used Swiggy/Instamart cohorts across platforms, datasets and campaigns."
+          subtitle="Expand a brand to view linked datasets, cohorts and platform audience usage."
           icon={Building2}
           right={activeBrand ? (
             <button onClick={() => setBrandFilter('All')} className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-700 hover:bg-orange-100">
@@ -757,26 +824,135 @@ const SwiggyPartnerDashboard: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredBrands.map((b) => (
-                  <tr
-                    key={b.name}
-                    onClick={() => { setBrandFilter(b.name); setDrawer({ type: 'brand', brand: b }); }}
-                    className={`cursor-pointer border-b border-slate-100 transition hover:bg-orange-50/50 ${brandFilter === b.name ? 'bg-orange-50/60' : ''}`}
-                  >
-                    <td className="py-3 pr-3 font-semibold text-slate-900">{b.name}</td>
-                    <td className="py-3 pr-3">{b.datasets}</td>
-                    <td className="py-3 pr-3">{b.cohorts}</td>
-                    <td className="py-3 pr-3">
-                      <div className="flex flex-wrap gap-1">
-                        {b.platforms.map((p) => <Chip key={p} label={p} className={platformChip(p)} />)}
-                      </div>
-                    </td>
-                    <td className="py-3 pr-3 font-semibold text-slate-900">{m(b.matched)}</td>
-                    <td className="py-3 pr-3">{b.campaigns}</td>
-                    <td className="py-3 pr-3 font-medium">{m(b.impressions)}</td>
-                    <td className="py-3 pr-3"><Chip label={b.status} /></td>
-                  </tr>
-                ))}
+                {filteredBrands.map((b) => {
+                  const open = expandedBrand === b.name;
+                  return (
+                    <React.Fragment key={b.name}>
+                      <tr
+                        onClick={() => { setExpandedBrand(open ? null : b.name); setBrandFilter(open ? 'All' : b.name); }}
+                        className={`cursor-pointer border-b border-slate-100 transition hover:bg-orange-50/50 ${brandFilter === b.name ? 'bg-orange-50/60' : ''}`}
+                      >
+                        <td className="py-3 pr-3 font-semibold text-slate-900">
+                          <span className="inline-flex items-center gap-2">
+                            {open ? <ChevronDown size={14} className="text-orange-500" /> : <ChevronRight size={14} className="text-slate-400" />}
+                            {b.name}
+                          </span>
+                        </td>
+                        <td className="py-3 pr-3">{b.datasets}</td>
+                        <td className="py-3 pr-3">{b.cohorts}</td>
+                        <td className="py-3 pr-3">
+                          <div className="flex flex-wrap gap-1">
+                            {b.platforms.map((p) => <Chip key={p} label={p} className={platformChip(p)} />)}
+                          </div>
+                        </td>
+                        <td className="py-3 pr-3 font-semibold text-slate-900">{m(b.matched)}</td>
+                        <td className="py-3 pr-3">{b.campaigns}</td>
+                        <td className="py-3 pr-3 font-medium">{m(b.impressions)}</td>
+                        <td className="py-3 pr-3"><Chip label={b.status} /></td>
+                      </tr>
+
+                      {open && (
+                        <tr className="border-b border-slate-100 bg-slate-50/70">
+                          <td colSpan={8} className="px-3 py-4">
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dataset → cohort usage for {b.name}</p>
+                            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                              <table className="w-full min-w-[980px] text-xs">
+                                <thead>
+                                  <tr className="border-b border-slate-200 bg-slate-50 text-left uppercase tracking-wide text-slate-500">
+                                    <th className="px-3 py-2 font-semibold">Dataset</th>
+                                    <th className="px-3 py-2 font-semibold">Cohort</th>
+                                    <th className="px-3 py-2 font-semibold">Category</th>
+                                    <th className="px-3 py-2 font-semibold">Approved IDs</th>
+                                    <th className="px-3 py-2 font-semibold">Platforms Pushed</th>
+                                    <th className="px-3 py-2 font-semibold">Platform Matched Size</th>
+                                    <th className="px-3 py-2 font-semibold">Avg. Match Rate</th>
+                                    <th className="px-3 py-2 font-semibold">Campaigns / Line Items</th>
+                                    <th className="px-3 py-2 font-semibold">Impressions Served</th>
+                                    <th className="px-3 py-2 font-semibold">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {b.usage.map((u) => {
+                                    const key = `${b.name}|${u.dataset}|${u.cohort}`;
+                                    const uOpen = expandedBrandCohort === key;
+                                    return (
+                                      <React.Fragment key={key}>
+                                        <tr
+                                          onClick={() => setExpandedBrandCohort(uOpen ? null : key)}
+                                          className={`cursor-pointer border-b border-slate-100 transition hover:bg-orange-50/50 ${uOpen ? 'bg-orange-50/50' : ''}`}
+                                        >
+                                          <td className="px-3 py-2 text-slate-600">
+                                            <span className="inline-flex items-center gap-2">
+                                              {uOpen ? <ChevronDown size={12} className="text-orange-500" /> : <ChevronRight size={12} className="text-slate-400" />}
+                                              {u.dataset}
+                                            </span>
+                                          </td>
+                                          <td className="px-3 py-2 font-medium text-slate-900">{u.cohort}</td>
+                                          <td className="px-3 py-2 text-slate-600">{u.category}</td>
+                                          <td className="px-3 py-2">{m(u.approvedIds)}</td>
+                                          <td className="px-3 py-2">
+                                            <div className="flex flex-wrap gap-1">
+                                              {u.platformsPushed.map((p) => <Chip key={p} label={p} className={platformChip(p)} />)}
+                                            </div>
+                                          </td>
+                                          <td className="px-3 py-2 font-semibold text-slate-900">{m(u.matched)}</td>
+                                          <td className="px-3 py-2">{u.matchRate}%</td>
+                                          <td className="px-3 py-2">{u.campaigns}</td>
+                                          <td className="px-3 py-2 font-medium">{m(u.impressions)}</td>
+                                          <td className="px-3 py-2"><Chip label={u.status} /></td>
+                                        </tr>
+
+                                        {uOpen && (
+                                          <tr className="border-b border-slate-100 bg-slate-50/80">
+                                            <td colSpan={10} className="px-3 py-3">
+                                              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Platform audience instances</p>
+                                              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                                <table className="w-full min-w-[900px] text-xs">
+                                                  <thead>
+                                                    <tr className="border-b border-slate-200 bg-slate-50 text-left uppercase tracking-wide text-slate-500">
+                                                      <th className="px-3 py-2 font-semibold">Platform</th>
+                                                      <th className="px-3 py-2 font-semibold">Platform Audience ID</th>
+                                                      <th className="px-3 py-2 font-semibold">Destination Account</th>
+                                                      <th className="px-3 py-2 font-semibold">Pushed IDs</th>
+                                                      <th className="px-3 py-2 font-semibold">Matched Size</th>
+                                                      <th className="px-3 py-2 font-semibold">Match Rate</th>
+                                                      <th className="px-3 py-2 font-semibold">Usage Status</th>
+                                                      <th className="px-3 py-2 font-semibold">Campaigns / Line Items</th>
+                                                      <th className="px-3 py-2 font-semibold">Impressions</th>
+                                                    </tr>
+                                                  </thead>
+                                                  <tbody>
+                                                    {u.instances.map((i) => (
+                                                      <tr key={i.audienceId} className="border-b border-slate-100 last:border-0">
+                                                        <td className="px-3 py-2"><Chip label={i.platform} className={platformChip(i.platform)} /></td>
+                                                        <td className="px-3 py-2 font-mono text-[11px] text-slate-700">{i.audienceId}</td>
+                                                        <td className="px-3 py-2 text-slate-600">{i.account}</td>
+                                                        <td className="px-3 py-2">{m(i.pushed)}</td>
+                                                        <td className="px-3 py-2 font-semibold">{m(i.matched)}</td>
+                                                        <td className="px-3 py-2">{i.rate}%</td>
+                                                        <td className="px-3 py-2"><Chip label={i.usageStatus} /></td>
+                                                        <td className="px-3 py-2">{i.campaigns}</td>
+                                                        <td className="px-3 py-2">{m(i.impressions)}</td>
+                                                      </tr>
+                                                    ))}
+                                                  </tbody>
+                                                </table>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        )}
+                                      </React.Fragment>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
                 {filteredBrands.length === 0 && (
                   <tr><td colSpan={8} className="py-6 text-center text-sm text-slate-500">No approved brand usage for the current filters.</td></tr>
                 )}
@@ -787,6 +963,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
             Brand mapping is derived from the approved account permission map. Only approved brand and account / advertiser labels are shown.
           </p>
         </Section>
+
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[65fr_35fr]">
         {/* Section 4 — campaigns */}
@@ -878,14 +1055,14 @@ const SwiggyPartnerDashboard: React.FC = () => {
       {drawer && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]" onClick={() => setDrawer(null)} />
-          <aside className={`relative h-full w-full ${drawer.type === 'brand' ? 'max-w-3xl' : 'max-w-md'} overflow-y-auto border-l border-slate-200 bg-white shadow-2xl`}>
+          <aside className="relative h-full w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
             <div className="sticky top-0 flex items-start justify-between gap-4 border-b border-slate-100 bg-white px-5 py-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-600">
-                  {drawer.type === 'cohort' ? 'Cohort Detail' : drawer.type === 'campaign' ? 'Usage Detail' : drawer.type === 'governance' ? 'Governance Review' : drawer.type === 'brand' ? 'Brand Usage Detail' : 'Detail'}
+                  {drawer.type === 'cohort' ? 'Cohort Detail' : drawer.type === 'campaign' ? 'Usage Detail' : drawer.type === 'governance' ? 'Governance Review' : 'Detail'}
                 </p>
                 <h3 className="text-base font-semibold text-slate-900">
-                  {drawer.type === 'cohort' ? drawer.cohort.cohort : drawer.type === 'campaign' ? drawer.row.object : drawer.type === 'governance' ? drawer.alert.alert : drawer.type === 'brand' ? `Brand Usage Detail: ${drawer.brand.name}` : drawer.title}
+                  {drawer.type === 'cohort' ? drawer.cohort.cohort : drawer.type === 'campaign' ? drawer.row.object : drawer.type === 'governance' ? drawer.alert.alert : drawer.title}
                 </h3>
               </div>
               <button onClick={() => setDrawer(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={16} /></button>
@@ -974,90 +1151,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
                 </>
               )}
 
-              {drawer.type === 'brand' && (
-                <>
-                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Brand summary</p>
-                  <Row label="Brand" value={drawer.brand.name} />
-                  <Row label="Approved account / advertiser labels" value={drawer.brand.accounts.join(', ')} />
-                  <Row label="Datasets used" value={String(drawer.brand.datasets)} />
-                  <Row label="Cohorts used" value={String(drawer.brand.cohorts)} />
-                  <Row label="Platforms used" value={<span className="inline-flex flex-wrap justify-end gap-1">{drawer.brand.platforms.map((p) => <Chip key={p} label={p} className={platformChip(p)} />)}</span>} />
-                  <Row label="Platform matched size" value={m(drawer.brand.matched)} />
-                  <Row label="Campaigns / line items" value={String(drawer.brand.campaigns)} />
-                  <Row label="Impressions served" value={m(drawer.brand.impressions)} />
-                  <Row label="Status" value={<Chip label={drawer.brand.status} />} />
 
-                  <p className="mt-5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dataset + cohort usage for brand</p>
-                  <div className="mt-2 overflow-x-auto rounded-xl border border-slate-200">
-                    <table className="w-full min-w-[640px] text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-200 bg-slate-50 text-left uppercase tracking-wide text-slate-500">
-                          <th className="px-3 py-2 font-semibold">Dataset</th>
-                          <th className="px-3 py-2 font-semibold">Cohort</th>
-                          <th className="px-3 py-2 font-semibold">Category</th>
-                          <th className="px-3 py-2 font-semibold">Platforms</th>
-                          <th className="px-3 py-2 font-semibold">Matched</th>
-                          <th className="px-3 py-2 font-semibold">Impressions</th>
-                          <th className="px-3 py-2 font-semibold">Usage Type</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {drawer.brand.usage.map((u) => (
-                          <tr key={u.dataset + u.cohort} className="border-b border-slate-100 last:border-0">
-                            <td className="px-3 py-2 text-slate-600">{u.dataset}</td>
-                            <td className="px-3 py-2 font-medium text-slate-900">{u.cohort}</td>
-                            <td className="px-3 py-2 text-slate-600">{u.category}</td>
-                            <td className="px-3 py-2">{u.platforms.join(', ')}</td>
-                            <td className="px-3 py-2 font-semibold">{m(u.matched)}</td>
-                            <td className="px-3 py-2">{m(u.impressions)}</td>
-                            <td className="px-3 py-2">{u.usageType}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <p className="mt-5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Platform breakdown for brand</p>
-                  <div className="mt-2 overflow-x-auto rounded-xl border border-slate-200">
-                    <table className="w-full min-w-[760px] text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-200 bg-slate-50 text-left uppercase tracking-wide text-slate-500">
-                          <th className="px-3 py-2 font-semibold">Platform</th>
-                          <th className="px-3 py-2 font-semibold">Platform Audience ID</th>
-                          <th className="px-3 py-2 font-semibold">Dataset</th>
-                          <th className="px-3 py-2 font-semibold">Cohort</th>
-                          <th className="px-3 py-2 font-semibold">Account / Advertiser</th>
-                          <th className="px-3 py-2 font-semibold">Matched</th>
-                          <th className="px-3 py-2 font-semibold">Campaigns</th>
-                          <th className="px-3 py-2 font-semibold">Impressions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {drawer.brand.platformRows.map((r) => (
-                          <tr key={r.audienceId + r.cohort} className="border-b border-slate-100 last:border-0">
-                            <td className="px-3 py-2"><Chip label={r.platform} className={platformChip(r.platform)} /></td>
-                            <td className="px-3 py-2 font-mono text-[11px] text-slate-700">{r.audienceId}</td>
-                            <td className="px-3 py-2 text-slate-600">{r.dataset}</td>
-                            <td className="px-3 py-2 text-slate-600">{r.cohort}</td>
-                            <td className="px-3 py-2 text-slate-600">{r.account}</td>
-                            <td className="px-3 py-2 font-semibold">{m(r.matched)}</td>
-                            <td className="px-3 py-2">{r.campaigns}</td>
-                            <td className="px-3 py-2">{m(r.impressions)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="mt-5 grid grid-cols-1 gap-2">
-                    <button onClick={() => { setBrandFilter(drawer.brand.name); setDrawer(null); scrollTo('campaigns'); }} className="rounded-lg bg-orange-500 px-3 py-2 text-sm font-semibold text-white hover:bg-orange-600">View Campaign Usage For Brand</button>
-                    <button onClick={() => { setBrandFilter('All'); setDrawer(null); }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Clear Brand Filter</button>
-                  </div>
-                  <p className="mt-4 rounded-lg bg-slate-50 p-3 text-[11px] text-slate-500">
-                    Brand usage is derived from the approved account permission map. Spend, clicks, conversions and revenue are not exposed.
-                  </p>
-                </>
-              )}
             </div>
           </aside>
         </div>

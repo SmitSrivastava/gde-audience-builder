@@ -726,6 +726,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
             </div>
           </div>
         </Section>
+        </div>
 
         {/* Section 3 — Brand-Wise Usage */}
         <Section

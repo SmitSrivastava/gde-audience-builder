@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   X, ArrowLeft, Database, Layers, Fingerprint, UploadCloud, Users2, Percent,
-  Megaphone, BarChart3, ShieldAlert, ChevronRight, ChevronDown, Filter,
+  Megaphone, BarChart3, ShieldAlert, ChevronRight, ChevronDown, Filter, Building2,
 } from 'lucide-react';
 
 /* ============================ Data model ============================ */
@@ -152,6 +152,143 @@ const alerts: Alert[] = [
   },
 ];
 
+/* ==================== Brand mapping (derived from account_permission_map) ==================== */
+
+type BrandUsageRow = {
+  dataset: string; cohort: string; category: string; platforms: Platform[];
+  matched: number; impressions: number; usageType: string;
+};
+
+type BrandPlatformRow = {
+  platform: Platform; audienceId: string; dataset: string; cohort: string;
+  account: string; matched: number; campaigns: number; impressions: number;
+};
+
+type Brand = {
+  name: string;
+  accounts: string[];
+  datasets: number;
+  cohorts: number;
+  platforms: Platform[];
+  matched: number;
+  campaigns: number;
+  impressions: number;
+  status: 'Active' | 'Completed';
+  /** cohort + platform pairs this brand is approved on — used to filter the dashboard */
+  pairs: { cohort: string; platform: Platform }[];
+  usage: BrandUsageRow[];
+  platformRows: BrandPlatformRow[];
+};
+
+const brands: Brand[] = [
+  {
+    name: 'Coca-Cola',
+    accounts: ['Coca-Cola Approved Advertiser A', 'Coca-Cola Approved Account B', 'Coca-Cola Approved Account C'],
+    datasets: 2, cohorts: 4, platforms: ['Google Ads', 'DV360', 'Meta'],
+    matched: 8.7, campaigns: 5, impressions: 46.2, status: 'Active',
+    pairs: [
+      { cohort: 'High-Intent Grocery Buyers', platform: 'DV360' },
+      { cohort: 'High-Intent Grocery Buyers', platform: 'Google Ads' },
+      { cohort: 'Snacks & Beverage Buyers', platform: 'Meta' },
+      { cohort: 'Snacks & Beverage Buyers', platform: 'Google Ads' },
+      { cohort: 'Premium Basket Shoppers', platform: 'Meta' },
+    ],
+    usage: [
+      { dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', category: 'Q-Commerce', platforms: ['DV360', 'Google Ads'], matched: 3.8, impressions: 24.8, usageType: 'Targeting' },
+      { dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', category: 'Category Buyers', platforms: ['DV360', 'Meta'], matched: 2.7, impressions: 13.1, usageType: 'Targeting' },
+      { dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', category: 'Commerce Value', platforms: ['Meta'], matched: 1.2, impressions: 8.3, usageType: 'Lookalike Seed' },
+    ],
+    platformRows: [
+      { platform: 'DV360', audienceId: 'DV-AUD-77812', dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', account: 'Coca-Cola Approved Advertiser A', matched: 2.3, campaigns: 2, impressions: 18.6 },
+      { platform: 'Google Ads', audienceId: 'GA-AUD-10421', dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', account: 'Coca-Cola Approved Account B', matched: 1.5, campaigns: 1, impressions: 6.2 },
+      { platform: 'Meta', audienceId: 'META-AUD-55210', dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', account: 'Coca-Cola Approved Account C', matched: 1.2, campaigns: 2, impressions: 13.1 },
+    ],
+  },
+  {
+    name: 'Britannia',
+    accounts: ['Britannia Approved Advertiser A', 'Britannia Approved Account D'],
+    datasets: 3, cohorts: 5, platforms: ['DV360', 'Meta'],
+    matched: 9.4, campaigns: 6, impressions: 51.8, status: 'Active',
+    pairs: [
+      { cohort: 'High-Intent Grocery Buyers', platform: 'DV360' },
+      { cohort: 'Premium Basket Shoppers', platform: 'DV360' },
+      { cohort: 'Premium Basket Shoppers', platform: 'Meta' },
+      { cohort: 'Frequent Instamart Users', platform: 'DV360' },
+      { cohort: 'Monthly High Spenders', platform: 'DV360' },
+      { cohort: 'Lapsed Grocery Buyers', platform: 'Meta' },
+    ],
+    usage: [
+      { dataset: 'Instamart Grocery Behaviour', cohort: 'Frequent Instamart Users', category: 'Frequency', platforms: ['DV360'], matched: 3.5, impressions: 12.3, usageType: 'Targeting' },
+      { dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', category: 'Commerce Value', platforms: ['DV360', 'Meta'], matched: 3.9, impressions: 22.6, usageType: 'Targeting' },
+      { dataset: 'Instamart High-Value Buyers', cohort: 'Monthly High Spenders', category: 'High Value', platforms: ['DV360'], matched: 2.0, impressions: 16.9, usageType: 'Targeting' },
+    ],
+    platformRows: [
+      { platform: 'DV360', audienceId: 'DV-AUD-20990', dataset: 'Instamart Grocery Behaviour', cohort: 'Frequent Instamart Users', account: 'Britannia Approved Advertiser A', matched: 3.5, campaigns: 2, impressions: 12.3 },
+      { platform: 'DV360', audienceId: 'DV-AUD-33110', dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', account: 'Britannia Approved Advertiser A', matched: 2.4, campaigns: 2, impressions: 11.2 },
+      { platform: 'Meta', audienceId: 'META-AUD-33412', dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', account: 'Britannia Approved Account D', matched: 1.5, campaigns: 1, impressions: 11.4 },
+      { platform: 'DV360', audienceId: 'DV-AUD-66190', dataset: 'Instamart High-Value Buyers', cohort: 'Monthly High Spenders', account: 'Britannia Approved Advertiser A', matched: 2.0, campaigns: 1, impressions: 16.9 },
+    ],
+  },
+  {
+    name: 'HUL',
+    accounts: ['HUL Approved Advertiser A', 'HUL Approved Account C'],
+    datasets: 1, cohorts: 2, platforms: ['Google Ads', 'DV360'],
+    matched: 4.1, campaigns: 3, impressions: 18.5, status: 'Active',
+    pairs: [
+      { cohort: 'Frequent Instamart Users', platform: 'Google Ads' },
+      { cohort: 'High-Intent Grocery Buyers', platform: 'Google Ads' },
+      { cohort: 'High-Intent Grocery Buyers', platform: 'DV360' },
+    ],
+    usage: [
+      { dataset: 'Instamart Grocery Behaviour', cohort: 'Frequent Instamart Users', category: 'Frequency', platforms: ['Google Ads'], matched: 2.4, impressions: 11.3, usageType: 'Targeting' },
+      { dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', category: 'Q-Commerce', platforms: ['Google Ads', 'DV360'], matched: 1.7, impressions: 7.2, usageType: 'Targeting' },
+    ],
+    platformRows: [
+      { platform: 'Google Ads', audienceId: 'GA-AUD-20219', dataset: 'Instamart Grocery Behaviour', cohort: 'Frequent Instamart Users', account: 'HUL Approved Account C', matched: 2.4, campaigns: 2, impressions: 11.3 },
+      { platform: 'DV360', audienceId: 'DV-AUD-77812', dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', account: 'HUL Approved Advertiser A', matched: 1.7, campaigns: 1, impressions: 7.2 },
+    ],
+  },
+  {
+    name: 'Mondelez',
+    accounts: ['Mondelez Approved Advertiser B'],
+    datasets: 1, cohorts: 2, platforms: ['Meta', 'DV360'],
+    matched: 3.8, campaigns: 2, impressions: 13.6, status: 'Completed',
+    pairs: [
+      { cohort: 'Lapsed Grocery Buyers', platform: 'Meta' },
+      { cohort: 'Premium Basket Shoppers', platform: 'Meta' },
+      { cohort: 'Premium Basket Shoppers', platform: 'DV360' },
+    ],
+    usage: [
+      { dataset: 'Instamart Grocery Behaviour', cohort: 'Lapsed Grocery Buyers', category: 'Reactivation', platforms: ['Meta'], matched: 1.5, impressions: 7.2, usageType: 'Retargeting' },
+      { dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', category: 'Commerce Value', platforms: ['Meta', 'DV360'], matched: 2.3, impressions: 6.4, usageType: 'Lookalike Seed' },
+    ],
+    platformRows: [
+      { platform: 'Meta', audienceId: 'META-AUD-90176', dataset: 'Instamart Grocery Behaviour', cohort: 'Lapsed Grocery Buyers', account: 'Mondelez Approved Advertiser B', matched: 1.5, campaigns: 1, impressions: 7.2 },
+      { platform: 'Meta', audienceId: 'META-AUD-33412', dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', account: 'Mondelez Approved Advertiser B', matched: 2.3, campaigns: 1, impressions: 6.4 },
+    ],
+  },
+  {
+    name: 'Nestlé',
+    accounts: ['Nestlé Approved Advertiser A', 'Nestlé Approved Account B'],
+    datasets: 2, cohorts: 3, platforms: ['Google Ads', 'Meta'],
+    matched: 5.8, campaigns: 4, impressions: 12.5, status: 'Active',
+    pairs: [
+      { cohort: 'Snacks & Beverage Buyers', platform: 'Google Ads' },
+      { cohort: 'Snacks & Beverage Buyers', platform: 'Meta' },
+      { cohort: 'Lapsed Grocery Buyers', platform: 'Google Ads' },
+    ],
+    usage: [
+      { dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', category: 'Category Buyers', platforms: ['Google Ads', 'Meta'], matched: 4.0, impressions: 8.4, usageType: 'Targeting' },
+      { dataset: 'Instamart Grocery Behaviour', cohort: 'Lapsed Grocery Buyers', category: 'Reactivation', platforms: ['Google Ads'], matched: 1.8, impressions: 4.1, usageType: 'Retargeting' },
+    ],
+    platformRows: [
+      { platform: 'Google Ads', audienceId: 'GA-AUD-31877', dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', account: 'Nestlé Approved Advertiser A', matched: 2.2, campaigns: 2, impressions: 4.5 },
+      { platform: 'Meta', audienceId: 'META-AUD-44021', dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', account: 'Nestlé Approved Account B', matched: 1.8, campaigns: 1, impressions: 3.9 },
+      { platform: 'Google Ads', audienceId: 'GA-AUD-51120', dataset: 'Instamart Grocery Behaviour', cohort: 'Lapsed Grocery Buyers', account: 'Nestlé Approved Advertiser A', matched: 1.8, campaigns: 1, impressions: 4.1 },
+    ],
+  },
+];
+
 /* ============================ Helpers ============================ */
 
 const m = (v: number) => `${v.toFixed(1)}M`;
@@ -225,6 +362,7 @@ type DrawerState =
   | { type: 'cohort'; cohort: Cohort }
   | { type: 'campaign'; row: CampaignRow }
   | { type: 'governance'; alert: Alert }
+  | { type: 'brand'; brand: Brand }
   | { type: 'kpi'; title: string; rows: { label: string; value: string }[]; note?: string }
   | null;
 
@@ -246,6 +384,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
   const [platform, setPlatform] = useState('All');
   const [usage, setUsage] = useState('All');
   const [governance, setGovernance] = useState('All');
+  const [brandFilter, setBrandFilter] = useState<string>('All');
 
   const [expanded, setExpanded] = useState<string | null>('C1');
   const [drawer, setDrawer] = useState<DrawerState>(null);
@@ -253,13 +392,27 @@ const SwiggyPartnerDashboard: React.FC = () => {
   const datasetOptions = ['All', ...Array.from(new Set(cohorts.map((c) => c.dataset)))];
   const cohortOptions = ['All', ...cohorts.map((c) => c.cohort)];
 
+  const activeBrand = useMemo(() => brands.find((b) => b.name === brandFilter) ?? null, [brandFilter]);
+  const brandPair = (cohort: string, p: Platform) =>
+    !activeBrand || activeBrand.pairs.some((x) => x.cohort === cohort && x.platform === p);
+  const brandCohortNames = useMemo(
+    () => (activeBrand ? new Set(activeBrand.pairs.map((p) => p.cohort)) : null),
+    [activeBrand],
+  );
+
   /* -------- filtering -------- */
   const filteredCohorts = useMemo(() => {
     return cohorts
       .filter((c) => dataset === 'All' || c.dataset === dataset)
       .filter((c) => cohortFilter === 'All' || c.cohort === cohortFilter)
       .filter((c) => governance === 'All' || c.governance === governance)
-      .map((c) => ({ ...c, instances: c.instances.filter((i) => platform === 'All' || i.platform === platform) }))
+      .filter((c) => !brandCohortNames || brandCohortNames.has(c.cohort))
+      .map((c) => ({
+        ...c,
+        instances: c.instances
+          .filter((i) => platform === 'All' || i.platform === platform)
+          .filter((i) => brandPair(c.cohort, i.platform)),
+      }))
       .filter((c) => c.instances.length > 0)
       .filter((c) => {
         if (usage === 'All') return true;
@@ -269,15 +422,18 @@ const SwiggyPartnerDashboard: React.FC = () => {
         if (usage === 'Pushed') return c.instances.some((i) => i.pushed > 0);
         return true;
       });
-  }, [dataset, cohortFilter, platform, usage, governance]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataset, cohortFilter, platform, usage, governance, activeBrand]);
 
   const filteredCampaigns = useMemo(
     () => campaignRows
       .filter((r) => dataset === 'All' || r.dataset === dataset)
       .filter((r) => cohortFilter === 'All' || r.cohort === cohortFilter)
       .filter((r) => platform === 'All' || r.platform === platform)
+      .filter((r) => brandPair(r.cohort, r.platform))
       .filter((r) => filteredCohorts.some((c) => c.cohort === r.cohort)),
-    [dataset, cohortFilter, platform, filteredCohorts],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dataset, cohortFilter, platform, filteredCohorts, activeBrand],
   );
 
   const filteredAlerts = useMemo(
@@ -285,8 +441,18 @@ const SwiggyPartnerDashboard: React.FC = () => {
       .filter((a) => dataset === 'All' || a.dataset === dataset)
       .filter((a) => cohortFilter === 'All' || a.cohort === cohortFilter)
       .filter((a) => platform === 'All' || a.platform === platform)
-      .filter((a) => governance === 'All' || a.status === governance),
-    [dataset, cohortFilter, platform, governance],
+      .filter((a) => governance === 'All' || a.status === governance)
+      .filter((a) => brandPair(a.cohort, a.platform)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dataset, cohortFilter, platform, governance, activeBrand],
+  );
+
+  const filteredBrands = useMemo(
+    () => brands
+      .filter((b) => brandFilter === 'All' || b.name === brandFilter)
+      .filter((b) => platform === 'All' || b.platforms.includes(platform as Platform))
+      .filter((b) => cohortFilter === 'All' || b.pairs.some((p) => p.cohort === cohortFilter)),
+    [brandFilter, platform, cohortFilter],
   );
 
   const agg = (c: Cohort) => {
@@ -304,7 +470,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
     const pushedTotal = allInst.reduce((s, i) => s + i.pushed, 0);
     const avgRate = allInst.length ? Math.round((matched / pushedTotal) * 100) : 0;
     return [
-      { key: 'datasets', label: 'Datasets Onboarded', value: String(new Set(filteredCohorts.map((c) => c.dataset)).size), icon: Database },
+      { key: 'datasets', label: 'Datasets Integrated', value: String(new Set(filteredCohorts.map((c) => c.dataset)).size), icon: Database },
       { key: 'cohorts', label: 'Cohorts Created', value: String(filteredCohorts.length), icon: Layers },
       { key: 'ids', label: 'Approved IDs', value: m(pushedIds), icon: Fingerprint },
       { key: 'pushes', label: 'Platform Audience Pushes', value: String(allInst.length), icon: UploadCloud },
@@ -350,6 +516,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
     platform !== 'All' && { label: `Platform: ${platform}`, clear: () => setPlatform('All') },
     usage !== 'All' && { label: `Usage: ${usage}`, clear: () => setUsage('All') },
     governance !== 'All' && { label: `Governance: ${governance}`, clear: () => setGovernance('All') },
+    brandFilter !== 'All' && { label: `Brand: ${brandFilter}`, clear: () => setBrandFilter('All') },
   ].filter(Boolean) as { label: string; clear: () => void }[];
 
   return (
@@ -417,6 +584,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
           ))}
         </div>
 
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[60fr_40fr]">
         {/* Section 1 */}
         <Section id="cohorts" title="Dataset → Cohort Summary" subtitle="One row per dataset + cohort. Expand to see platform audience instances." icon={Layers}>
           <div className="overflow-x-auto">
@@ -560,8 +728,68 @@ const SwiggyPartnerDashboard: React.FC = () => {
             </div>
           </div>
         </Section>
+        </div>
 
-        {/* Section 3 */}
+        {/* Section 3 — Brand-Wise Usage */}
+        <Section
+          id="brands"
+          title="Brand-Wise Usage"
+          subtitle="See which approved brands have used Swiggy/Instamart cohorts across platforms, datasets and campaigns."
+          icon={Building2}
+          right={activeBrand ? (
+            <button onClick={() => setBrandFilter('All')} className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-700 hover:bg-orange-100">
+              Brand: {activeBrand.name} <X size={11} />
+            </button>
+          ) : undefined}
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1000px] text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                  <th className="py-2.5 pr-3 font-semibold">Brand</th>
+                  <th className="py-2.5 pr-3 font-semibold">Datasets Used</th>
+                  <th className="py-2.5 pr-3 font-semibold">Cohorts Used</th>
+                  <th className="py-2.5 pr-3 font-semibold">Platforms Used</th>
+                  <th className="py-2.5 pr-3 font-semibold">Platform Matched Size</th>
+                  <th className="py-2.5 pr-3 font-semibold">Campaigns / Line Items</th>
+                  <th className="py-2.5 pr-3 font-semibold">Impressions Served</th>
+                  <th className="py-2.5 pr-3 font-semibold">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredBrands.map((b) => (
+                  <tr
+                    key={b.name}
+                    onClick={() => { setBrandFilter(b.name); setDrawer({ type: 'brand', brand: b }); }}
+                    className={`cursor-pointer border-b border-slate-100 transition hover:bg-orange-50/50 ${brandFilter === b.name ? 'bg-orange-50/60' : ''}`}
+                  >
+                    <td className="py-3 pr-3 font-semibold text-slate-900">{b.name}</td>
+                    <td className="py-3 pr-3">{b.datasets}</td>
+                    <td className="py-3 pr-3">{b.cohorts}</td>
+                    <td className="py-3 pr-3">
+                      <div className="flex flex-wrap gap-1">
+                        {b.platforms.map((p) => <Chip key={p} label={p} className={platformChip(p)} />)}
+                      </div>
+                    </td>
+                    <td className="py-3 pr-3 font-semibold text-slate-900">{m(b.matched)}</td>
+                    <td className="py-3 pr-3">{b.campaigns}</td>
+                    <td className="py-3 pr-3 font-medium">{m(b.impressions)}</td>
+                    <td className="py-3 pr-3"><Chip label={b.status} /></td>
+                  </tr>
+                ))}
+                {filteredBrands.length === 0 && (
+                  <tr><td colSpan={8} className="py-6 text-center text-sm text-slate-500">No approved brand usage for the current filters.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 text-[11px] text-slate-500">
+            Brand mapping is derived from the approved account permission map. Only approved brand and account / advertiser labels are shown.
+          </p>
+        </Section>
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[65fr_35fr]">
+        {/* Section 4 — campaigns */}
         <Section id="campaigns" title="Campaign / Line Item Usage" subtitle="Every usage row is linked to a dataset, cohort and platform audience ID." icon={Megaphone}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1200px] text-sm">
@@ -597,7 +825,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
           </div>
         </Section>
 
-        {/* Section 4 */}
+        {/* Section 5 — governance */}
         <Section id="governance" title="Governance Alerts" subtitle="Review flags linked to dataset, cohort, platform and platform audience ID." icon={ShieldAlert}>
           {filteredAlerts.length === 0 ? (
             <p className="py-6 text-center text-sm text-slate-500">No open governance alerts for the current filters.</p>
@@ -632,6 +860,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
             </div>
           )}
         </Section>
+        </div>
 
         {/* Footer */}
         <footer className="rounded-2xl border border-slate-200 bg-white p-5 text-xs leading-relaxed text-slate-500">
@@ -649,14 +878,14 @@ const SwiggyPartnerDashboard: React.FC = () => {
       {drawer && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]" onClick={() => setDrawer(null)} />
-          <aside className="relative h-full w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
+          <aside className={`relative h-full w-full ${drawer.type === 'brand' ? 'max-w-3xl' : 'max-w-md'} overflow-y-auto border-l border-slate-200 bg-white shadow-2xl`}>
             <div className="sticky top-0 flex items-start justify-between gap-4 border-b border-slate-100 bg-white px-5 py-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-600">
-                  {drawer.type === 'cohort' ? 'Cohort Detail' : drawer.type === 'campaign' ? 'Usage Detail' : drawer.type === 'governance' ? 'Governance Review' : 'Detail'}
+                  {drawer.type === 'cohort' ? 'Cohort Detail' : drawer.type === 'campaign' ? 'Usage Detail' : drawer.type === 'governance' ? 'Governance Review' : drawer.type === 'brand' ? 'Brand Usage Detail' : 'Detail'}
                 </p>
                 <h3 className="text-base font-semibold text-slate-900">
-                  {drawer.type === 'cohort' ? drawer.cohort.cohort : drawer.type === 'campaign' ? drawer.row.object : drawer.type === 'governance' ? drawer.alert.alert : drawer.title}
+                  {drawer.type === 'cohort' ? drawer.cohort.cohort : drawer.type === 'campaign' ? drawer.row.object : drawer.type === 'governance' ? drawer.alert.alert : drawer.type === 'brand' ? `Brand Usage Detail: ${drawer.brand.name}` : drawer.title}
                 </h3>
               </div>
               <button onClick={() => setDrawer(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={16} /></button>
@@ -741,6 +970,91 @@ const SwiggyPartnerDashboard: React.FC = () => {
                   <Row label="Current status" value={<Chip label={drawer.alert.status} />} />
                   <p className="mt-4 rounded-lg border border-orange-100 bg-orange-50 p-3 text-[11px] leading-relaxed text-orange-800">
                     {drawer.alert.notes}
+                  </p>
+                </>
+              )}
+
+              {drawer.type === 'brand' && (
+                <>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Brand summary</p>
+                  <Row label="Brand" value={drawer.brand.name} />
+                  <Row label="Approved account / advertiser labels" value={drawer.brand.accounts.join(', ')} />
+                  <Row label="Datasets used" value={String(drawer.brand.datasets)} />
+                  <Row label="Cohorts used" value={String(drawer.brand.cohorts)} />
+                  <Row label="Platforms used" value={<span className="inline-flex flex-wrap justify-end gap-1">{drawer.brand.platforms.map((p) => <Chip key={p} label={p} className={platformChip(p)} />)}</span>} />
+                  <Row label="Platform matched size" value={m(drawer.brand.matched)} />
+                  <Row label="Campaigns / line items" value={String(drawer.brand.campaigns)} />
+                  <Row label="Impressions served" value={m(drawer.brand.impressions)} />
+                  <Row label="Status" value={<Chip label={drawer.brand.status} />} />
+
+                  <p className="mt-5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dataset + cohort usage for brand</p>
+                  <div className="mt-2 overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="w-full min-w-[640px] text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50 text-left uppercase tracking-wide text-slate-500">
+                          <th className="px-3 py-2 font-semibold">Dataset</th>
+                          <th className="px-3 py-2 font-semibold">Cohort</th>
+                          <th className="px-3 py-2 font-semibold">Category</th>
+                          <th className="px-3 py-2 font-semibold">Platforms</th>
+                          <th className="px-3 py-2 font-semibold">Matched</th>
+                          <th className="px-3 py-2 font-semibold">Impressions</th>
+                          <th className="px-3 py-2 font-semibold">Usage Type</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {drawer.brand.usage.map((u) => (
+                          <tr key={u.dataset + u.cohort} className="border-b border-slate-100 last:border-0">
+                            <td className="px-3 py-2 text-slate-600">{u.dataset}</td>
+                            <td className="px-3 py-2 font-medium text-slate-900">{u.cohort}</td>
+                            <td className="px-3 py-2 text-slate-600">{u.category}</td>
+                            <td className="px-3 py-2">{u.platforms.join(', ')}</td>
+                            <td className="px-3 py-2 font-semibold">{m(u.matched)}</td>
+                            <td className="px-3 py-2">{m(u.impressions)}</td>
+                            <td className="px-3 py-2">{u.usageType}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <p className="mt-5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Platform breakdown for brand</p>
+                  <div className="mt-2 overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="w-full min-w-[760px] text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50 text-left uppercase tracking-wide text-slate-500">
+                          <th className="px-3 py-2 font-semibold">Platform</th>
+                          <th className="px-3 py-2 font-semibold">Platform Audience ID</th>
+                          <th className="px-3 py-2 font-semibold">Dataset</th>
+                          <th className="px-3 py-2 font-semibold">Cohort</th>
+                          <th className="px-3 py-2 font-semibold">Account / Advertiser</th>
+                          <th className="px-3 py-2 font-semibold">Matched</th>
+                          <th className="px-3 py-2 font-semibold">Campaigns</th>
+                          <th className="px-3 py-2 font-semibold">Impressions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {drawer.brand.platformRows.map((r) => (
+                          <tr key={r.audienceId + r.cohort} className="border-b border-slate-100 last:border-0">
+                            <td className="px-3 py-2"><Chip label={r.platform} className={platformChip(r.platform)} /></td>
+                            <td className="px-3 py-2 font-mono text-[11px] text-slate-700">{r.audienceId}</td>
+                            <td className="px-3 py-2 text-slate-600">{r.dataset}</td>
+                            <td className="px-3 py-2 text-slate-600">{r.cohort}</td>
+                            <td className="px-3 py-2 text-slate-600">{r.account}</td>
+                            <td className="px-3 py-2 font-semibold">{m(r.matched)}</td>
+                            <td className="px-3 py-2">{r.campaigns}</td>
+                            <td className="px-3 py-2">{m(r.impressions)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-1 gap-2">
+                    <button onClick={() => { setBrandFilter(drawer.brand.name); setDrawer(null); scrollTo('campaigns'); }} className="rounded-lg bg-orange-500 px-3 py-2 text-sm font-semibold text-white hover:bg-orange-600">View Campaign Usage For Brand</button>
+                    <button onClick={() => { setBrandFilter('All'); setDrawer(null); }} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Clear Brand Filter</button>
+                  </div>
+                  <p className="mt-4 rounded-lg bg-slate-50 p-3 text-[11px] text-slate-500">
+                    Brand usage is derived from the approved account permission map. Spend, clicks, conversions and revenue are not exposed.
                   </p>
                 </>
               )}

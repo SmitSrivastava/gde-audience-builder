@@ -651,7 +651,6 @@ const SwiggyPartnerDashboard: React.FC = () => {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[60fr_40fr]">
         {/* Section 1 */}
         <Section id="cohorts" title="Dataset → Cohort Summary" subtitle="One row per dataset + cohort. Expand to see platform audience instances." icon={Layers}>
           <div className="overflow-x-auto">
@@ -795,7 +794,6 @@ const SwiggyPartnerDashboard: React.FC = () => {
             </div>
           </div>
         </Section>
-        </div>
 
         {/* Section 3 — Brand-Wise Usage (inline expandable) */}
         <Section
@@ -965,7 +963,6 @@ const SwiggyPartnerDashboard: React.FC = () => {
         </Section>
 
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[65fr_35fr]">
         {/* Section 4 — campaigns */}
         <Section id="campaigns" title="Campaign / Line Item Usage" subtitle="Every usage row is linked to a dataset, cohort and platform audience ID." icon={Megaphone}>
           <div className="overflow-x-auto">
@@ -1037,7 +1034,6 @@ const SwiggyPartnerDashboard: React.FC = () => {
             </div>
           )}
         </Section>
-        </div>
 
         {/* Footer */}
         <footer className="rounded-2xl border border-slate-200 bg-white p-5 text-xs leading-relaxed text-slate-500">

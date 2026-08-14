@@ -878,14 +878,14 @@ const SwiggyPartnerDashboard: React.FC = () => {
       {drawer && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]" onClick={() => setDrawer(null)} />
-          <aside className={`relative h-full w-full ${drawer.type === 'brand' ? 'max-w-3xl' : 'max-w-md'} overflow-y-auto border-l border-slate-200 bg-white shadow-2xl`}>
+          <aside className="relative h-full w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
             <div className="sticky top-0 flex items-start justify-between gap-4 border-b border-slate-100 bg-white px-5 py-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-600">
-                  {drawer.type === 'cohort' ? 'Cohort Detail' : drawer.type === 'campaign' ? 'Usage Detail' : drawer.type === 'governance' ? 'Governance Review' : drawer.type === 'brand' ? 'Brand Usage Detail' : 'Detail'}
+                  {drawer.type === 'cohort' ? 'Cohort Detail' : drawer.type === 'campaign' ? 'Usage Detail' : drawer.type === 'governance' ? 'Governance Review' : 'Detail'}
                 </p>
                 <h3 className="text-base font-semibold text-slate-900">
-                  {drawer.type === 'cohort' ? drawer.cohort.cohort : drawer.type === 'campaign' ? drawer.row.object : drawer.type === 'governance' ? drawer.alert.alert : drawer.type === 'brand' ? `Brand Usage Detail: ${drawer.brand.name}` : drawer.title}
+                  {drawer.type === 'cohort' ? drawer.cohort.cohort : drawer.type === 'campaign' ? drawer.row.object : drawer.type === 'governance' ? drawer.alert.alert : drawer.title}
                 </h3>
               </div>
               <button onClick={() => setDrawer(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={16} /></button>

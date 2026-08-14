@@ -422,7 +422,6 @@ type DrawerState =
   | { type: 'cohort'; cohort: Cohort }
   | { type: 'campaign'; row: CampaignRow }
   | { type: 'governance'; alert: Alert }
-  | { type: 'brand'; brand: Brand }
   | { type: 'kpi'; title: string; rows: { label: string; value: string }[]; note?: string }
   | null;
 
@@ -447,6 +446,8 @@ const SwiggyPartnerDashboard: React.FC = () => {
   const [brandFilter, setBrandFilter] = useState<string>('All');
 
   const [expanded, setExpanded] = useState<string | null>('C1');
+  const [expandedBrand, setExpandedBrand] = useState<string | null>(null);
+  const [expandedBrandCohort, setExpandedBrandCohort] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<DrawerState>(null);
 
   const datasetOptions = ['All', ...Array.from(new Set(cohorts.map((c) => c.dataset)))];

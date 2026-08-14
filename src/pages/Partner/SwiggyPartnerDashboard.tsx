@@ -384,6 +384,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
   const [platform, setPlatform] = useState('All');
   const [usage, setUsage] = useState('All');
   const [governance, setGovernance] = useState('All');
+  const [brandFilter, setBrandFilter] = useState<string>('All');
 
   const [expanded, setExpanded] = useState<string | null>('C1');
   const [drawer, setDrawer] = useState<DrawerState>(null);
@@ -391,13 +392,27 @@ const SwiggyPartnerDashboard: React.FC = () => {
   const datasetOptions = ['All', ...Array.from(new Set(cohorts.map((c) => c.dataset)))];
   const cohortOptions = ['All', ...cohorts.map((c) => c.cohort)];
 
+  const activeBrand = useMemo(() => brands.find((b) => b.name === brandFilter) ?? null, [brandFilter]);
+  const brandPair = (cohort: string, p: Platform) =>
+    !activeBrand || activeBrand.pairs.some((x) => x.cohort === cohort && x.platform === p);
+  const brandCohortNames = useMemo(
+    () => (activeBrand ? new Set(activeBrand.pairs.map((p) => p.cohort)) : null),
+    [activeBrand],
+  );
+
   /* -------- filtering -------- */
   const filteredCohorts = useMemo(() => {
     return cohorts
       .filter((c) => dataset === 'All' || c.dataset === dataset)
       .filter((c) => cohortFilter === 'All' || c.cohort === cohortFilter)
       .filter((c) => governance === 'All' || c.governance === governance)
-      .map((c) => ({ ...c, instances: c.instances.filter((i) => platform === 'All' || i.platform === platform) }))
+      .filter((c) => !brandCohortNames || brandCohortNames.has(c.cohort))
+      .map((c) => ({
+        ...c,
+        instances: c.instances
+          .filter((i) => platform === 'All' || i.platform === platform)
+          .filter((i) => brandPair(c.cohort, i.platform)),
+      }))
       .filter((c) => c.instances.length > 0)
       .filter((c) => {
         if (usage === 'All') return true;
@@ -407,15 +422,18 @@ const SwiggyPartnerDashboard: React.FC = () => {
         if (usage === 'Pushed') return c.instances.some((i) => i.pushed > 0);
         return true;
       });
-  }, [dataset, cohortFilter, platform, usage, governance]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataset, cohortFilter, platform, usage, governance, activeBrand]);
 
   const filteredCampaigns = useMemo(
     () => campaignRows
       .filter((r) => dataset === 'All' || r.dataset === dataset)
       .filter((r) => cohortFilter === 'All' || r.cohort === cohortFilter)
       .filter((r) => platform === 'All' || r.platform === platform)
+      .filter((r) => brandPair(r.cohort, r.platform))
       .filter((r) => filteredCohorts.some((c) => c.cohort === r.cohort)),
-    [dataset, cohortFilter, platform, filteredCohorts],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dataset, cohortFilter, platform, filteredCohorts, activeBrand],
   );
 
   const filteredAlerts = useMemo(
@@ -423,8 +441,18 @@ const SwiggyPartnerDashboard: React.FC = () => {
       .filter((a) => dataset === 'All' || a.dataset === dataset)
       .filter((a) => cohortFilter === 'All' || a.cohort === cohortFilter)
       .filter((a) => platform === 'All' || a.platform === platform)
-      .filter((a) => governance === 'All' || a.status === governance),
-    [dataset, cohortFilter, platform, governance],
+      .filter((a) => governance === 'All' || a.status === governance)
+      .filter((a) => brandPair(a.cohort, a.platform)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dataset, cohortFilter, platform, governance, activeBrand],
+  );
+
+  const filteredBrands = useMemo(
+    () => brands
+      .filter((b) => brandFilter === 'All' || b.name === brandFilter)
+      .filter((b) => platform === 'All' || b.platforms.includes(platform as Platform))
+      .filter((b) => cohortFilter === 'All' || b.pairs.some((p) => p.cohort === cohortFilter)),
+    [brandFilter, platform, cohortFilter],
   );
 
   const agg = (c: Cohort) => {

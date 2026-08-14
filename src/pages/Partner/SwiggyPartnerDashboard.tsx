@@ -470,7 +470,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
     const pushedTotal = allInst.reduce((s, i) => s + i.pushed, 0);
     const avgRate = allInst.length ? Math.round((matched / pushedTotal) * 100) : 0;
     return [
-      { key: 'datasets', label: 'Datasets Onboarded', value: String(new Set(filteredCohorts.map((c) => c.dataset)).size), icon: Database },
+      { key: 'datasets', label: 'Datasets Integrated', value: String(new Set(filteredCohorts.map((c) => c.dataset)).size), icon: Database },
       { key: 'cohorts', label: 'Cohorts Created', value: String(filteredCohorts.length), icon: Layers },
       { key: 'ids', label: 'Approved IDs', value: m(pushedIds), icon: Fingerprint },
       { key: 'pushes', label: 'Platform Audience Pushes', value: String(allInst.length), icon: UploadCloud },

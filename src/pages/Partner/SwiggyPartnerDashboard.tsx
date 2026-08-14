@@ -730,11 +730,11 @@ const SwiggyPartnerDashboard: React.FC = () => {
         </Section>
         </div>
 
-        {/* Section 3 — Brand-Wise Usage */}
+        {/* Section 3 — Brand-Wise Usage (inline expandable) */}
         <Section
           id="brands"
           title="Brand-Wise Usage"
-          subtitle="See which approved brands have used Swiggy/Instamart cohorts across platforms, datasets and campaigns."
+          subtitle="Expand a brand to view linked datasets, cohorts and platform audience usage."
           icon={Building2}
           right={activeBrand ? (
             <button onClick={() => setBrandFilter('All')} className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-700 hover:bg-orange-100">
@@ -757,26 +757,135 @@ const SwiggyPartnerDashboard: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredBrands.map((b) => (
-                  <tr
-                    key={b.name}
-                    onClick={() => { setBrandFilter(b.name); setDrawer({ type: 'brand', brand: b }); }}
-                    className={`cursor-pointer border-b border-slate-100 transition hover:bg-orange-50/50 ${brandFilter === b.name ? 'bg-orange-50/60' : ''}`}
-                  >
-                    <td className="py-3 pr-3 font-semibold text-slate-900">{b.name}</td>
-                    <td className="py-3 pr-3">{b.datasets}</td>
-                    <td className="py-3 pr-3">{b.cohorts}</td>
-                    <td className="py-3 pr-3">
-                      <div className="flex flex-wrap gap-1">
-                        {b.platforms.map((p) => <Chip key={p} label={p} className={platformChip(p)} />)}
-                      </div>
-                    </td>
-                    <td className="py-3 pr-3 font-semibold text-slate-900">{m(b.matched)}</td>
-                    <td className="py-3 pr-3">{b.campaigns}</td>
-                    <td className="py-3 pr-3 font-medium">{m(b.impressions)}</td>
-                    <td className="py-3 pr-3"><Chip label={b.status} /></td>
-                  </tr>
-                ))}
+                {filteredBrands.map((b) => {
+                  const open = expandedBrand === b.name;
+                  return (
+                    <React.Fragment key={b.name}>
+                      <tr
+                        onClick={() => { setExpandedBrand(open ? null : b.name); setBrandFilter(open ? 'All' : b.name); }}
+                        className={`cursor-pointer border-b border-slate-100 transition hover:bg-orange-50/50 ${brandFilter === b.name ? 'bg-orange-50/60' : ''}`}
+                      >
+                        <td className="py-3 pr-3 font-semibold text-slate-900">
+                          <span className="inline-flex items-center gap-2">
+                            {open ? <ChevronDown size={14} className="text-orange-500" /> : <ChevronRight size={14} className="text-slate-400" />}
+                            {b.name}
+                          </span>
+                        </td>
+                        <td className="py-3 pr-3">{b.datasets}</td>
+                        <td className="py-3 pr-3">{b.cohorts}</td>
+                        <td className="py-3 pr-3">
+                          <div className="flex flex-wrap gap-1">
+                            {b.platforms.map((p) => <Chip key={p} label={p} className={platformChip(p)} />)}
+                          </div>
+                        </td>
+                        <td className="py-3 pr-3 font-semibold text-slate-900">{m(b.matched)}</td>
+                        <td className="py-3 pr-3">{b.campaigns}</td>
+                        <td className="py-3 pr-3 font-medium">{m(b.impressions)}</td>
+                        <td className="py-3 pr-3"><Chip label={b.status} /></td>
+                      </tr>
+
+                      {open && (
+                        <tr className="border-b border-slate-100 bg-slate-50/70">
+                          <td colSpan={8} className="px-3 py-4">
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Dataset → cohort usage for {b.name}</p>
+                            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                              <table className="w-full min-w-[980px] text-xs">
+                                <thead>
+                                  <tr className="border-b border-slate-200 bg-slate-50 text-left uppercase tracking-wide text-slate-500">
+                                    <th className="px-3 py-2 font-semibold">Dataset</th>
+                                    <th className="px-3 py-2 font-semibold">Cohort</th>
+                                    <th className="px-3 py-2 font-semibold">Category</th>
+                                    <th className="px-3 py-2 font-semibold">Approved IDs</th>
+                                    <th className="px-3 py-2 font-semibold">Platforms Pushed</th>
+                                    <th className="px-3 py-2 font-semibold">Platform Matched Size</th>
+                                    <th className="px-3 py-2 font-semibold">Avg. Match Rate</th>
+                                    <th className="px-3 py-2 font-semibold">Campaigns / Line Items</th>
+                                    <th className="px-3 py-2 font-semibold">Impressions Served</th>
+                                    <th className="px-3 py-2 font-semibold">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {b.usage.map((u) => {
+                                    const key = `${b.name}|${u.dataset}|${u.cohort}`;
+                                    const uOpen = expandedBrandCohort === key;
+                                    return (
+                                      <React.Fragment key={key}>
+                                        <tr
+                                          onClick={() => setExpandedBrandCohort(uOpen ? null : key)}
+                                          className={`cursor-pointer border-b border-slate-100 transition hover:bg-orange-50/50 ${uOpen ? 'bg-orange-50/50' : ''}`}
+                                        >
+                                          <td className="px-3 py-2 text-slate-600">
+                                            <span className="inline-flex items-center gap-2">
+                                              {uOpen ? <ChevronDown size={12} className="text-orange-500" /> : <ChevronRight size={12} className="text-slate-400" />}
+                                              {u.dataset}
+                                            </span>
+                                          </td>
+                                          <td className="px-3 py-2 font-medium text-slate-900">{u.cohort}</td>
+                                          <td className="px-3 py-2 text-slate-600">{u.category}</td>
+                                          <td className="px-3 py-2">{m(u.approvedIds)}</td>
+                                          <td className="px-3 py-2">
+                                            <div className="flex flex-wrap gap-1">
+                                              {u.platformsPushed.map((p) => <Chip key={p} label={p} className={platformChip(p)} />)}
+                                            </div>
+                                          </td>
+                                          <td className="px-3 py-2 font-semibold text-slate-900">{m(u.matched)}</td>
+                                          <td className="px-3 py-2">{u.matchRate}%</td>
+                                          <td className="px-3 py-2">{u.campaigns}</td>
+                                          <td className="px-3 py-2 font-medium">{m(u.impressions)}</td>
+                                          <td className="px-3 py-2"><Chip label={u.status} /></td>
+                                        </tr>
+
+                                        {uOpen && (
+                                          <tr className="border-b border-slate-100 bg-slate-50/80">
+                                            <td colSpan={10} className="px-3 py-3">
+                                              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Platform audience instances</p>
+                                              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                                <table className="w-full min-w-[900px] text-xs">
+                                                  <thead>
+                                                    <tr className="border-b border-slate-200 bg-slate-50 text-left uppercase tracking-wide text-slate-500">
+                                                      <th className="px-3 py-2 font-semibold">Platform</th>
+                                                      <th className="px-3 py-2 font-semibold">Platform Audience ID</th>
+                                                      <th className="px-3 py-2 font-semibold">Destination Account</th>
+                                                      <th className="px-3 py-2 font-semibold">Pushed IDs</th>
+                                                      <th className="px-3 py-2 font-semibold">Matched Size</th>
+                                                      <th className="px-3 py-2 font-semibold">Match Rate</th>
+                                                      <th className="px-3 py-2 font-semibold">Usage Status</th>
+                                                      <th className="px-3 py-2 font-semibold">Campaigns / Line Items</th>
+                                                      <th className="px-3 py-2 font-semibold">Impressions</th>
+                                                    </tr>
+                                                  </thead>
+                                                  <tbody>
+                                                    {u.instances.map((i) => (
+                                                      <tr key={i.audienceId} className="border-b border-slate-100 last:border-0">
+                                                        <td className="px-3 py-2"><Chip label={i.platform} className={platformChip(i.platform)} /></td>
+                                                        <td className="px-3 py-2 font-mono text-[11px] text-slate-700">{i.audienceId}</td>
+                                                        <td className="px-3 py-2 text-slate-600">{i.account}</td>
+                                                        <td className="px-3 py-2">{m(i.pushed)}</td>
+                                                        <td className="px-3 py-2 font-semibold">{m(i.matched)}</td>
+                                                        <td className="px-3 py-2">{i.rate}%</td>
+                                                        <td className="px-3 py-2"><Chip label={i.usageStatus} /></td>
+                                                        <td className="px-3 py-2">{i.campaigns}</td>
+                                                        <td className="px-3 py-2">{m(i.impressions)}</td>
+                                                      </tr>
+                                                    ))}
+                                                  </tbody>
+                                                </table>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        )}
+                                      </React.Fragment>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
                 {filteredBrands.length === 0 && (
                   <tr><td colSpan={8} className="py-6 text-center text-sm text-slate-500">No approved brand usage for the current filters.</td></tr>
                 )}
@@ -787,6 +896,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
             Brand mapping is derived from the approved account permission map. Only approved brand and account / advertiser labels are shown.
           </p>
         </Section>
+
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[65fr_35fr]">
         {/* Section 4 — campaigns */}

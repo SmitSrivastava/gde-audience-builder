@@ -583,6 +583,7 @@ const SwiggyPartnerDashboard: React.FC = () => {
           ))}
         </div>
 
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[60fr_40fr]">
         {/* Section 1 */}
         <Section id="cohorts" title="Dataset → Cohort Summary" subtitle="One row per dataset + cohort. Expand to see platform audience instances." icon={Layers}>
           <div className="overflow-x-auto">

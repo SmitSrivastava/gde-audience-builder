@@ -727,7 +727,66 @@ const SwiggyPartnerDashboard: React.FC = () => {
           </div>
         </Section>
 
-        {/* Section 3 */}
+        {/* Section 3 — Brand-Wise Usage */}
+        <Section
+          id="brands"
+          title="Brand-Wise Usage"
+          subtitle="See which approved brands have used Swiggy/Instamart cohorts across platforms, datasets and campaigns."
+          icon={Building2}
+          right={activeBrand ? (
+            <button onClick={() => setBrandFilter('All')} className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-700 hover:bg-orange-100">
+              Brand: {activeBrand.name} <X size={11} />
+            </button>
+          ) : undefined}
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1000px] text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                  <th className="py-2.5 pr-3 font-semibold">Brand</th>
+                  <th className="py-2.5 pr-3 font-semibold">Datasets Used</th>
+                  <th className="py-2.5 pr-3 font-semibold">Cohorts Used</th>
+                  <th className="py-2.5 pr-3 font-semibold">Platforms Used</th>
+                  <th className="py-2.5 pr-3 font-semibold">Platform Matched Size</th>
+                  <th className="py-2.5 pr-3 font-semibold">Campaigns / Line Items</th>
+                  <th className="py-2.5 pr-3 font-semibold">Impressions Served</th>
+                  <th className="py-2.5 pr-3 font-semibold">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredBrands.map((b) => (
+                  <tr
+                    key={b.name}
+                    onClick={() => { setBrandFilter(b.name); setDrawer({ type: 'brand', brand: b }); }}
+                    className={`cursor-pointer border-b border-slate-100 transition hover:bg-orange-50/50 ${brandFilter === b.name ? 'bg-orange-50/60' : ''}`}
+                  >
+                    <td className="py-3 pr-3 font-semibold text-slate-900">{b.name}</td>
+                    <td className="py-3 pr-3">{b.datasets}</td>
+                    <td className="py-3 pr-3">{b.cohorts}</td>
+                    <td className="py-3 pr-3">
+                      <div className="flex flex-wrap gap-1">
+                        {b.platforms.map((p) => <Chip key={p} label={p} className={platformChip(p)} />)}
+                      </div>
+                    </td>
+                    <td className="py-3 pr-3 font-semibold text-slate-900">{m(b.matched)}</td>
+                    <td className="py-3 pr-3">{b.campaigns}</td>
+                    <td className="py-3 pr-3 font-medium">{m(b.impressions)}</td>
+                    <td className="py-3 pr-3"><Chip label={b.status} /></td>
+                  </tr>
+                ))}
+                {filteredBrands.length === 0 && (
+                  <tr><td colSpan={8} className="py-6 text-center text-sm text-slate-500">No approved brand usage for the current filters.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 text-[11px] text-slate-500">
+            Brand mapping is derived from the approved account permission map. Only approved brand and account / advertiser labels are shown.
+          </p>
+        </Section>
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[65fr_35fr]">
+        {/* Section 4 — campaigns */}
         <Section id="campaigns" title="Campaign / Line Item Usage" subtitle="Every usage row is linked to a dataset, cohort and platform audience ID." icon={Megaphone}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1200px] text-sm">

@@ -152,6 +152,143 @@ const alerts: Alert[] = [
   },
 ];
 
+/* ==================== Brand mapping (derived from account_permission_map) ==================== */
+
+type BrandUsageRow = {
+  dataset: string; cohort: string; category: string; platforms: Platform[];
+  matched: number; impressions: number; usageType: string;
+};
+
+type BrandPlatformRow = {
+  platform: Platform; audienceId: string; dataset: string; cohort: string;
+  account: string; matched: number; campaigns: number; impressions: number;
+};
+
+type Brand = {
+  name: string;
+  accounts: string[];
+  datasets: number;
+  cohorts: number;
+  platforms: Platform[];
+  matched: number;
+  campaigns: number;
+  impressions: number;
+  status: 'Active' | 'Completed';
+  /** cohort + platform pairs this brand is approved on — used to filter the dashboard */
+  pairs: { cohort: string; platform: Platform }[];
+  usage: BrandUsageRow[];
+  platformRows: BrandPlatformRow[];
+};
+
+const brands: Brand[] = [
+  {
+    name: 'Coca-Cola',
+    accounts: ['Coca-Cola Approved Advertiser A', 'Coca-Cola Approved Account B', 'Coca-Cola Approved Account C'],
+    datasets: 2, cohorts: 4, platforms: ['Google Ads', 'DV360', 'Meta'],
+    matched: 8.7, campaigns: 5, impressions: 46.2, status: 'Active',
+    pairs: [
+      { cohort: 'High-Intent Grocery Buyers', platform: 'DV360' },
+      { cohort: 'High-Intent Grocery Buyers', platform: 'Google Ads' },
+      { cohort: 'Snacks & Beverage Buyers', platform: 'Meta' },
+      { cohort: 'Snacks & Beverage Buyers', platform: 'Google Ads' },
+      { cohort: 'Premium Basket Shoppers', platform: 'Meta' },
+    ],
+    usage: [
+      { dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', category: 'Q-Commerce', platforms: ['DV360', 'Google Ads'], matched: 3.8, impressions: 24.8, usageType: 'Targeting' },
+      { dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', category: 'Category Buyers', platforms: ['DV360', 'Meta'], matched: 2.7, impressions: 13.1, usageType: 'Targeting' },
+      { dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', category: 'Commerce Value', platforms: ['Meta'], matched: 1.2, impressions: 8.3, usageType: 'Lookalike Seed' },
+    ],
+    platformRows: [
+      { platform: 'DV360', audienceId: 'DV-AUD-77812', dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', account: 'Coca-Cola Approved Advertiser A', matched: 2.3, campaigns: 2, impressions: 18.6 },
+      { platform: 'Google Ads', audienceId: 'GA-AUD-10421', dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', account: 'Coca-Cola Approved Account B', matched: 1.5, campaigns: 1, impressions: 6.2 },
+      { platform: 'Meta', audienceId: 'META-AUD-55210', dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', account: 'Coca-Cola Approved Account C', matched: 1.2, campaigns: 2, impressions: 13.1 },
+    ],
+  },
+  {
+    name: 'Britannia',
+    accounts: ['Britannia Approved Advertiser A', 'Britannia Approved Account D'],
+    datasets: 3, cohorts: 5, platforms: ['DV360', 'Meta'],
+    matched: 9.4, campaigns: 6, impressions: 51.8, status: 'Active',
+    pairs: [
+      { cohort: 'High-Intent Grocery Buyers', platform: 'DV360' },
+      { cohort: 'Premium Basket Shoppers', platform: 'DV360' },
+      { cohort: 'Premium Basket Shoppers', platform: 'Meta' },
+      { cohort: 'Frequent Instamart Users', platform: 'DV360' },
+      { cohort: 'Monthly High Spenders', platform: 'DV360' },
+      { cohort: 'Lapsed Grocery Buyers', platform: 'Meta' },
+    ],
+    usage: [
+      { dataset: 'Instamart Grocery Behaviour', cohort: 'Frequent Instamart Users', category: 'Frequency', platforms: ['DV360'], matched: 3.5, impressions: 12.3, usageType: 'Targeting' },
+      { dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', category: 'Commerce Value', platforms: ['DV360', 'Meta'], matched: 3.9, impressions: 22.6, usageType: 'Targeting' },
+      { dataset: 'Instamart High-Value Buyers', cohort: 'Monthly High Spenders', category: 'High Value', platforms: ['DV360'], matched: 2.0, impressions: 16.9, usageType: 'Targeting' },
+    ],
+    platformRows: [
+      { platform: 'DV360', audienceId: 'DV-AUD-20990', dataset: 'Instamart Grocery Behaviour', cohort: 'Frequent Instamart Users', account: 'Britannia Approved Advertiser A', matched: 3.5, campaigns: 2, impressions: 12.3 },
+      { platform: 'DV360', audienceId: 'DV-AUD-33110', dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', account: 'Britannia Approved Advertiser A', matched: 2.4, campaigns: 2, impressions: 11.2 },
+      { platform: 'Meta', audienceId: 'META-AUD-33412', dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', account: 'Britannia Approved Account D', matched: 1.5, campaigns: 1, impressions: 11.4 },
+      { platform: 'DV360', audienceId: 'DV-AUD-66190', dataset: 'Instamart High-Value Buyers', cohort: 'Monthly High Spenders', account: 'Britannia Approved Advertiser A', matched: 2.0, campaigns: 1, impressions: 16.9 },
+    ],
+  },
+  {
+    name: 'HUL',
+    accounts: ['HUL Approved Advertiser A', 'HUL Approved Account C'],
+    datasets: 1, cohorts: 2, platforms: ['Google Ads', 'DV360'],
+    matched: 4.1, campaigns: 3, impressions: 18.5, status: 'Active',
+    pairs: [
+      { cohort: 'Frequent Instamart Users', platform: 'Google Ads' },
+      { cohort: 'High-Intent Grocery Buyers', platform: 'Google Ads' },
+      { cohort: 'High-Intent Grocery Buyers', platform: 'DV360' },
+    ],
+    usage: [
+      { dataset: 'Instamart Grocery Behaviour', cohort: 'Frequent Instamart Users', category: 'Frequency', platforms: ['Google Ads'], matched: 2.4, impressions: 11.3, usageType: 'Targeting' },
+      { dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', category: 'Q-Commerce', platforms: ['Google Ads', 'DV360'], matched: 1.7, impressions: 7.2, usageType: 'Targeting' },
+    ],
+    platformRows: [
+      { platform: 'Google Ads', audienceId: 'GA-AUD-20219', dataset: 'Instamart Grocery Behaviour', cohort: 'Frequent Instamart Users', account: 'HUL Approved Account C', matched: 2.4, campaigns: 2, impressions: 11.3 },
+      { platform: 'DV360', audienceId: 'DV-AUD-77812', dataset: 'Instamart Grocery Behaviour', cohort: 'High-Intent Grocery Buyers', account: 'HUL Approved Advertiser A', matched: 1.7, campaigns: 1, impressions: 7.2 },
+    ],
+  },
+  {
+    name: 'Mondelez',
+    accounts: ['Mondelez Approved Advertiser B'],
+    datasets: 1, cohorts: 2, platforms: ['Meta', 'DV360'],
+    matched: 3.8, campaigns: 2, impressions: 13.6, status: 'Completed',
+    pairs: [
+      { cohort: 'Lapsed Grocery Buyers', platform: 'Meta' },
+      { cohort: 'Premium Basket Shoppers', platform: 'Meta' },
+      { cohort: 'Premium Basket Shoppers', platform: 'DV360' },
+    ],
+    usage: [
+      { dataset: 'Instamart Grocery Behaviour', cohort: 'Lapsed Grocery Buyers', category: 'Reactivation', platforms: ['Meta'], matched: 1.5, impressions: 7.2, usageType: 'Retargeting' },
+      { dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', category: 'Commerce Value', platforms: ['Meta', 'DV360'], matched: 2.3, impressions: 6.4, usageType: 'Lookalike Seed' },
+    ],
+    platformRows: [
+      { platform: 'Meta', audienceId: 'META-AUD-90176', dataset: 'Instamart Grocery Behaviour', cohort: 'Lapsed Grocery Buyers', account: 'Mondelez Approved Advertiser B', matched: 1.5, campaigns: 1, impressions: 7.2 },
+      { platform: 'Meta', audienceId: 'META-AUD-33412', dataset: 'Instamart High-Value Buyers', cohort: 'Premium Basket Shoppers', account: 'Mondelez Approved Advertiser B', matched: 2.3, campaigns: 1, impressions: 6.4 },
+    ],
+  },
+  {
+    name: 'Nestlé',
+    accounts: ['Nestlé Approved Advertiser A', 'Nestlé Approved Account B'],
+    datasets: 2, cohorts: 3, platforms: ['Google Ads', 'Meta'],
+    matched: 5.8, campaigns: 4, impressions: 12.5, status: 'Active',
+    pairs: [
+      { cohort: 'Snacks & Beverage Buyers', platform: 'Google Ads' },
+      { cohort: 'Snacks & Beverage Buyers', platform: 'Meta' },
+      { cohort: 'Lapsed Grocery Buyers', platform: 'Google Ads' },
+    ],
+    usage: [
+      { dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', category: 'Category Buyers', platforms: ['Google Ads', 'Meta'], matched: 4.0, impressions: 8.4, usageType: 'Targeting' },
+      { dataset: 'Instamart Grocery Behaviour', cohort: 'Lapsed Grocery Buyers', category: 'Reactivation', platforms: ['Google Ads'], matched: 1.8, impressions: 4.1, usageType: 'Retargeting' },
+    ],
+    platformRows: [
+      { platform: 'Google Ads', audienceId: 'GA-AUD-31877', dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', account: 'Nestlé Approved Advertiser A', matched: 2.2, campaigns: 2, impressions: 4.5 },
+      { platform: 'Meta', audienceId: 'META-AUD-44021', dataset: 'Swiggy Food Ordering Signals', cohort: 'Snacks & Beverage Buyers', account: 'Nestlé Approved Account B', matched: 1.8, campaigns: 1, impressions: 3.9 },
+      { platform: 'Google Ads', audienceId: 'GA-AUD-51120', dataset: 'Instamart Grocery Behaviour', cohort: 'Lapsed Grocery Buyers', account: 'Nestlé Approved Advertiser A', matched: 1.8, campaigns: 1, impressions: 4.1 },
+    ],
+  },
+];
+
 /* ============================ Helpers ============================ */
 
 const m = (v: number) => `${v.toFixed(1)}M`;

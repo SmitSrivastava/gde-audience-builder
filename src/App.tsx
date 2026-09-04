@@ -14,6 +14,8 @@ import Activation from "./pages/Activation";
 import NotFound from "./pages/NotFound";
 import PlanningPage from "./pages/Planning/PlanningPage";
 import SwiggyPartnerDashboard from "./pages/Partner/SwiggyPartnerDashboard";
+import CohortPlanner from "./pages/Planning/CohortPlanner";
+
 import './index.css';
 
 const queryClient = new QueryClient();
@@ -32,6 +34,10 @@ const App = () => (
 
               {/* Partner usage dashboard (light theme, standalone) */}
               <Route path="/partners/swiggy" element={<SwiggyPartnerDashboard />} />
+
+              {/* Cohort planner (Ask The Cohort. Know The Scale.) */}
+              <Route path="/planner" element={<CohortPlanner />} />
+
 
               {/* Netflix-themed app routes wrapped in Layout */}
               <Route element={<Layout />}>

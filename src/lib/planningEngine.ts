@@ -11,6 +11,9 @@ export type Row = {
   age: number[];
   gender: number[];
   text: string;
+  sigText: string;
+  catText: string;
+
   sector: string;
   layer: string;
   key: string;
@@ -127,12 +130,25 @@ export const fmt = (n: number) => {
   return Math.round(n).toLocaleString();
 };
 
+/* word-boundary / phrase matching — substring matching caused card→car, beverage→ev, apparel→app bleed */
+const kwCache = new Map<string, RegExp>();
+const kwRe = (k: string) => {
+  let re = kwCache.get(k);
+  if (!re) {
+    const esc = k.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+    re = new RegExp(`(^|[^a-z0-9])${esc}(s|es)?([^a-z0-9]|$)`);
+    kwCache.set(k, re);
+  }
+  return re;
+};
+export const hasKw = (text: string, k: string) => kwRe(k).test(text);
+
 function classify(map: Record<string, string[]>, text: string, fallback: string) {
   let best = fallback;
   let score = 0;
   for (const [name, kws] of Object.entries(map)) {
     let s = 0;
-    for (const k of kws) if (text.includes(k)) s += k.length > 5 ? 2 : 1;
+    for (const k of kws) if (hasKw(text, k)) s += k.length > 5 ? 2 : 1;
     if (s > score) {
       score = s;
       best = name;
@@ -146,7 +162,7 @@ function coreOf(text: string) {
   let score = 0;
   for (const [name, c] of Object.entries(CORE_CATEGORIES)) {
     let s = 0;
-    for (const k of c.keywords) if (text.includes(k)) s += k.length > 5 ? 2 : 1;
+    for (const k of c.keywords) if (hasKw(text, k)) s += k.length > 5 ? 2 : 1;
     if (s > score) {
       score = s;
       best = name;
@@ -155,14 +171,17 @@ function coreOf(text: string) {
   return best;
 }
 
+
 function buildRow(partner: string, category: string, sub: string, signal: string, volume: number, geo: number[], age: number[], gender: number[]): Row {
   const text = clean(`${partner} ${category} ${sub} ${signal}`);
-  const sector = classify(SECTORS, text, "Cross-Sector");
-  const layer = classify(LAYERS, text, "Cross-Sector Consumer Signals");
-  const core = coreOf(text);
+  const sigText = clean(signal);
+  const catText = clean(`${category} ${sub}`);
+  const sector = classify(SECTORS, `${sigText} ${catText}`, "Cross-Sector");
+  const layer = classify(LAYERS, `${sigText} ${catText}`, "Cross-Sector Consumer Signals");
+  const core = coreOf(`${sigText} ${catText}`);
   const normalized = core ? CORE_CATEGORIES[core].normalized : "cross_sector";
   const cleanedSignal = tokens(signal).slice(0, 5).sort().join("_");
-  return { partner, category, sub, signal, volume, geo, age, gender, text, sector, layer, key: `${normalized}|${sector}|${layer}|${cleanedSignal}` };
+  return { partner, category, sub, signal, volume, geo, age, gender, text, sigText, catText, sector, layer, key: `${normalized}|${sector}|${layer}|${cleanedSignal}` };
 }
 
 /* ===================== dataset ===================== */
@@ -260,11 +279,63 @@ const NG = neutralArr(GEOS, NEUTRAL_GEO);
 const NA = neutralArr(AGES, NEUTRAL_AGE);
 const NX = neutralArr(GENDERS, NEUTRAL_GENDER);
 
+const hasDist = (a: number[]) => a && a.reduce((x, y) => x + y, 0) > 0.01;
+
+/* signal-level index weights: each matched signal profiles differently on geo, age and gender */
+const GEO_IDX: Record<string, Partial<Record<string, number>>> = {
+  Affluence: { Metro: 1.35, "Tier 1": 1.05, "Tier 2": 0.7, "Tier 3": 0.45 },
+  "Travel & Hospitality": { Metro: 1.25, "Tier 1": 1.1, "Tier 2": 0.8, "Tier 3": 0.6 },
+  "Consumer Electronics": { Metro: 1.15, "Tier 1": 1.05, "Tier 2": 0.95, "Tier 3": 0.8 },
+  "CPG / FMCG": { Metro: 0.9, "Tier 1": 1.05, "Tier 2": 1.2, "Tier 3": 1.3 },
+  Education: { Metro: 1.0, "Tier 1": 1.15, "Tier 2": 1.2, "Tier 3": 1.1 },
+  Auto: { Metro: 1.1, "Tier 1": 1.1, "Tier 2": 0.95, "Tier 3": 0.8 },
+  BFSI: { Metro: 1.1, "Tier 1": 1.05, "Tier 2": 0.95, "Tier 3": 0.85 },
+  "Fashion & Beauty": { Metro: 1.2, "Tier 1": 1.05, "Tier 2": 0.9, "Tier 3": 0.7 },
+};
+const AGE_IDX: Record<string, Partial<Record<string, number>>> = {
+  Education: { "Less than 22": 2.6, "23-28": 1.6, "29-34": 0.7, "35-40": 0.4, "41-46": 0.3, "47-52": 0.25, "52+": 0.2 },
+  "Fashion & Beauty": { "Less than 22": 1.2, "23-28": 1.4, "29-34": 1.15, "35-40": 0.9, "41-46": 0.7, "47-52": 0.55, "52+": 0.45 },
+  "Digital & Apps": { "Less than 22": 1.5, "23-28": 1.35, "29-34": 1.05, "35-40": 0.8, "41-46": 0.6, "47-52": 0.5, "52+": 0.4 },
+  Auto: { "Less than 22": 0.4, "23-28": 0.9, "29-34": 1.25, "35-40": 1.3, "41-46": 1.2, "47-52": 1.0, "52+": 0.8 },
+  BFSI: { "Less than 22": 0.5, "23-28": 1.05, "29-34": 1.2, "35-40": 1.15, "41-46": 1.05, "47-52": 0.95, "52+": 0.85 },
+  "CPG / FMCG": { "Less than 22": 0.7, "23-28": 1.0, "29-34": 1.2, "35-40": 1.2, "41-46": 1.05, "47-52": 0.9, "52+": 0.8 },
+  "Travel & Hospitality": { "Less than 22": 0.5, "23-28": 1.0, "29-34": 1.2, "35-40": 1.25, "41-46": 1.15, "47-52": 1.0, "52+": 0.9 },
+  Affluence: { "Less than 22": 0.4, "23-28": 0.85, "29-34": 1.2, "35-40": 1.3, "41-46": 1.25, "47-52": 1.1, "52+": 0.95 },
+};
+const GEN_IDX: Record<string, Partial<Record<string, number>>> = {
+  "Fashion & Beauty": { Female: 1.7, Male: 0.55 },
+  Auto: { Female: 0.5, Male: 1.35 },
+  "Consumer Electronics": { Female: 0.8, Male: 1.15 },
+  BFSI: { Female: 0.85, Male: 1.1 },
+  Education: { Female: 1.05, Male: 0.98 },
+  "CPG / FMCG": { Female: 1.15, Male: 0.9 },
+};
+
+const applyIdx = (base: number[], labels: string[], idx?: Partial<Record<string, number>>) => {
+  if (!idx) return base;
+  const v = base.map((x, i) => x * (idx[labels[i]] ?? 1));
+  const s = v.reduce((a, b) => a + b, 0) || 1;
+  return v.map((x) => x / s);
+};
+
+const distCache = new WeakMap<Row, { g: number[]; a: number[]; x: number[] }>();
 function distOf(r: Row) {
-  // Zepto rows carry genuine partner-level distribution; other partners are rebuilt on a neutral planning distribution
-  if (/zepto/i.test(r.partner)) return { g: r.geo, a: r.age, x: r.gender };
-  return { g: NG, a: NA, x: NX };
+  const hit = distCache.get(r);
+  if (hit) return hit;
+  const bg = hasDist(r.geo) ? r.geo : NG;
+  const ba = hasDist(r.age) ? r.age : NA;
+  const bx = hasDist(r.gender) ? r.gender : NX;
+  // partner breakdown indexed by the signal's own sector and layer profile
+  const d = {
+    g: applyIdx(applyIdx(bg, GEOS, GEO_IDX[r.sector]), GEOS, GEO_IDX[r.layer]),
+    a: applyIdx(applyIdx(ba, AGES, AGE_IDX[r.sector]), AGES, AGE_IDX[r.layer]),
+    x: applyIdx(bx, GENDERS, GEN_IDX[r.sector]),
+  };
+  distCache.set(r, d);
+  return d;
 }
+
+
 
 /* ===================== query parsing ===================== */
 export function parseQueryToBlocks(qRaw: string): { blocks: Block[]; operator: "AND" | "OR" | "EXCLUDE"; premium: boolean } {
@@ -287,11 +358,12 @@ export function parseQueryToBlocks(qRaw: string): { blocks: Block[]; operator: "
     if (bucket) filters.age_bucket = bucket;
   }
 
-  // detect core categories mentioned
+  // detect anchor core categories mentioned (word-boundary, never on modifiers/intents/filters alone)
   const found: string[] = [];
   for (const [name, c] of Object.entries(CORE_CATEGORIES)) {
-    if (c.keywords.some((k) => new RegExp(`(^|\\s)${k.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}`).test(q))) found.push(name);
+    if (c.keywords.some((k) => hasKw(q, k))) found.push(name);
   }
+
   const operator: "AND" | "OR" | "EXCLUDE" = /\bexclude|not |except|without\b/.test(q) ? "EXCLUDE" : /\bor\b/.test(q) ? "OR" : "AND";
   const modifiers = PREMIUM_WORDS.filter((w) => q.includes(w));
   const blocks: Block[] = found.slice(0, 3).map((core, i) => ({ id: `q${i}`, core_category: core, modifiers, filters }));
@@ -304,7 +376,7 @@ export function parseQueryToBlocks(qRaw: string): { blocks: Block[]; operator: "
 }
 
 /* ===================== block evaluation ===================== */
-type Eval = { total: number; rows: { r: Row; v: number; score: number }[]; sector: string; core: string };
+type Eval = { total: number; rows: { r: Row; v: number; score: number }[]; sector: string; core: string; filters?: Filters };
 
 function keywordsFor(core: string) {
   if (core.startsWith("__free:")) return { kws: core.slice(7).split(" "), sector: "Cross-Sector" };
@@ -317,45 +389,59 @@ function evalBlock(rows: Row[], block: Block, extraModifiers: string[] = [], ext
   const modifiers = Array.from(new Set([...block.modifiers, ...extraModifiers]));
   const filters = { ...extraFilters, ...block.filters };
   const isPremium = modifiers.some((m) => PREMIUM_WORDS.includes(m) || /premium|affluent|luxury|high value/.test(m));
+  const specific = !block.core_category.startsWith("__free:");
 
-  const eligible: { r: Row; score: number; hasMod: boolean }[] = [];
+  // anchor eligibility: a row qualifies only when a core-category keyword hits its signal / category / sub-category
+  const scored: { r: Row; score: number; hasMod: boolean }[] = [];
   for (const r of rows) {
-    let s = 0;
+    let anchor = 0;
     for (const k of kws) {
-      if (r.text.includes(k)) s += k.length > 5 ? 3 : 2;
+      if (hasKw(r.sigText, k)) anchor = Math.max(anchor, 5);
+      else if (hasKw(r.catText, k)) anchor = Math.max(anchor, 4);
     }
-    if (s === 0) continue;
-    if (sector !== "Cross-Sector" && r.sector === sector) s += 3;
-    if (block.intent && r.text.includes(block.intent)) s += 2;
-    const hasMod = PREMIUM_WORDS.some((w) => r.text.includes(w));
-    if (isPremium && hasMod) s += 4;
-    eligible.push({ r, score: s, hasMod });
+    if (!anchor) continue;
+    let s = anchor;
+    if (sector !== "Cross-Sector" && r.sector === sector) s += 6;
+    if (block.intent && hasKw(r.sigText, block.intent)) s += 3;
+    const hasMod = PREMIUM_WORDS.some((w) => hasKw(r.text, w));
+    if (isPremium && hasMod) s += 3;
+    if (filters.geo_tier || filters.age_bucket || filters.gender) s += 2;
+    scored.push({ r, score: s, hasMod });
+  }
+
+  let threshold = specific ? 8 : 5;
+  let eligible = scored.filter((e) => e.score >= threshold);
+  while (eligible.length < 10 && threshold > 4) {
+    threshold -= 1;
+    eligible = scored.filter((e) => e.score >= threshold);
   }
   if (!eligible.length) return { total: 0, rows: [], sector, core: block.core_category };
 
-  let selected = eligible;
+  let selected: { r: Row; score: number; hasMod: boolean; weight?: number }[] = eligible;
   let narrowing = 1;
   if (isPremium) {
     const mod = eligible.filter((e) => e.hasMod);
+    const affluence = eligible.filter((e) => !e.hasMod && e.r.layer === "Affluence");
     if (mod.length) {
-      const broad = eligible.filter((e) => !e.hasMod).map((e) => ({ ...e, weight: 0.2 }));
-      selected = [...mod.map((e) => ({ ...e, weight: 1 })), ...broad] as any;
-    } else {
+      selected = [...mod.map((e) => ({ ...e, weight: 1 })), ...eligible.filter((e) => !e.hasMod).map((e) => ({ ...e, weight: 0.2 }))];
+    } else if (affluence.length) {
       narrowing = 0.35;
+    } else {
+      narrowing = 0.2;
     }
   }
 
   const out: { r: Row; v: number; score: number }[] = [];
   let total = 0;
-  // group rows by cohort key to apply duplicate/partner contribution rules
+  // group rows by cohort meaning to apply duplicate/partner contribution rules
   const groups = new Map<string, { r: Row; score: number; weight: number }[]>();
-  for (const e of selected as any[]) {
+  for (const e of selected) {
     const arr = groups.get(e.r.key) || [];
     arr.push({ r: e.r, score: e.score, weight: e.weight ?? 1 });
     groups.set(e.r.key, arr);
   }
   for (const arr of groups.values()) {
-    // max per partner
+    // same partner duplicates → keep the largest
     const byPartner = new Map<string, { r: Row; score: number; weight: number }>();
     for (const e of arr) {
       const prev = byPartner.get(e.r.partner);
@@ -374,29 +460,47 @@ function evalBlock(rows: Row[], block: Block, extraModifiers: string[] = [], ext
       total += v;
     });
   }
-  return { total, rows: out, sector, core: block.core_category };
+  return { total, rows: out, sector, core: block.core_category, filters };
 }
+
 
 const sectorOf = (core: string) => (core.startsWith("__free:") ? "Cross-Sector" : CORE_CATEGORIES[core]?.sector || "Cross-Sector");
 
+const cohortOf = (r: Row) => r.key.split("|")[0];
+
 function combine(evals: Eval[], operator: "AND" | "OR" | "EXCLUDE"): Eval {
-  if (evals.length === 1) return evals[0];
-  const merged: Eval = { total: 0, rows: evals.flatMap((e) => e.rows), sector: evals[0]?.sector || "Cross-Sector", core: evals.map((e) => e.core).join(" / ") };
-  const totals = evals.map((e) => e.total);
-  const sameSector = new Set(evals.map((e) => e.sector)).size === 1;
+  const live = evals.filter((e) => e.rows.length);
+  if (!live.length) return { total: 0, rows: [], sector: evals[0]?.sector || "Cross-Sector", core: evals.map((e) => e.core).join(" / ") };
+  if (live.length === 1) return live[0];
+
+  const merged: Eval = { total: 0, rows: [], sector: live[0].sector, core: live.map((e) => e.core).join(" / "), filters: live[0].filters };
+  const totals = live.map((e) => e.total);
+  const sameSector = new Set(live.map((e) => e.sector)).size === 1;
+
   if (operator === "AND") {
     const factor = sameSector ? 0.25 : 0.15;
     merged.total = Math.min(...totals) * factor;
+    // rows must describe the intersection, never the union
+    const sets = live.map((e) => new Set(e.rows.map((x) => cohortOf(x.r))));
+    const shared = live[0].rows.filter((x) => sets.every((s) => s.has(cohortOf(x.r))));
+    if (shared.length) merged.rows = shared;
+    else {
+      const smallest = [...live].sort((a, b) => a.total - b.total)[0];
+      merged.rows = smallest.rows;
+      merged.sector = smallest.sector;
+    }
   } else if (operator === "OR") {
     const sorted = [...totals].sort((a, b) => b - a);
-    const overlapPct = sameSector ? 0.4 : 0.15;
+    const overlapPct = sameSector ? 0.4 : 0.25;
     merged.total = sorted.reduce((a, b, i) => a + (i === 0 ? b : b * (1 - overlapPct)), 0);
+    merged.rows = live.flatMap((e) => e.rows);
   } else {
     const base = totals[0];
     const excl = totals.slice(1).reduce((a, b) => a + b, 0);
-    const overlapPct = sameSector ? 0.3 : 0.1;
+    const overlapPct = sameSector ? 0.3 : 0.15;
     merged.total = Math.max(0, base - Math.min(base, excl) * overlapPct);
-    merged.rows = evals[0].rows;
+    merged.rows = live[0].rows;
+    merged.sector = live[0].sector;
   }
   return merged;
 }
@@ -430,6 +534,10 @@ function assemble(title: string, ev: Eval, notes: string): PlanResult {
     .sort((a, b) => b.volume - a.volume);
 
   const partners = Array.from(new Set(list.flatMap((g) => g.partners)));
+  const f = ev.filters || {};
+  if (f.geo_tier) GEOS.forEach((l, i) => { if (l !== f.geo_tier) gSplit[i] = 0; });
+  if (f.age_bucket) AGES.forEach((l, i) => { if (l !== f.age_bucket) aSplit[i] = 0; });
+  if (f.gender) GENDERS.forEach((l, i) => { if (l !== f.gender) xSplit[i] = 0; });
   const toSplit = (arr: number[], labels: string[]): Split[] => {
     const sum = arr.reduce((a, b) => a + b, 0) || 1;
     return labels
@@ -458,7 +566,7 @@ function assemble(title: string, ev: Eval, notes: string): PlanResult {
 export function runSearch(rows: Row[], qRaw: string): PlanResult {
   const { blocks, operator, premium } = parseQueryToBlocks(qRaw);
   const evals = blocks.map((b) => evalBlock(rows, b));
-  const ev = combine(evals.filter((e) => e.total > 0).length ? evals : evals, operator);
+  const ev = combine(evals, operator);
   const notes = `Matched relevant partner audience signals across ${new Set(evals.map((e) => e.sector)).size} planning sector(s), grouped similar cohort meanings and applied planning-grade geo, age and gender cuts.${premium ? " Premium and high-value indicators were prioritised." : ""}`;
   return assemble(qRaw.trim().replace(/\b\w/g, (c) => c.toUpperCase()), ev, notes);
 }

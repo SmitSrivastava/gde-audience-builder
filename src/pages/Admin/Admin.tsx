@@ -1,9 +1,10 @@
 
 import React from 'react';
 import { Routes, Route, NavLink } from 'react-router-dom';
-import { Users, Database, Settings } from 'lucide-react';
+import { Users, Database, Settings, FileSpreadsheet } from 'lucide-react';
 import OnboardEntity from './OnboardEntity';
 import GrantDatasetAccess from './GrantDatasetAccess';
+import AttributeCatalog from './AttributeCatalog';
 
 const Admin = () => {
   return (
@@ -38,11 +39,20 @@ const Admin = () => {
         >
           <Database size={20} /> Grant Dataset Access
         </NavLink>
+        <NavLink to="/admin/attribute-catalog"
+          className={({ isActive }) =>
+            `flex items-center gap-2 px-6 py-3 rounded-t-xl font-medium transition-all duration-300 ${
+              isActive ? 'bg-primary/15 text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+            }`}
+        >
+          <FileSpreadsheet size={20} /> Attribute Catalog
+        </NavLink>
       </div>
 
       <Routes>
         <Route index element={<OnboardEntity />} />
         <Route path="dataset-access" element={<GrantDatasetAccess />} />
+        <Route path="attribute-catalog" element={<AttributeCatalog />} />
       </Routes>
     </div>
   );

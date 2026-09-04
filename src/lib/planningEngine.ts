@@ -325,7 +325,7 @@ export function parseQueryToBlocks(qRaw: string): { blocks: Block[]; operator: "
 }
 
 /* ===================== block evaluation ===================== */
-type Eval = { total: number; rows: { r: Row; v: number; score: number }[]; sector: string; core: string };
+type Eval = { total: number; rows: { r: Row; v: number; score: number }[]; sector: string; core: string; filters?: Filters };
 
 function keywordsFor(core: string) {
   if (core.startsWith("__free:")) return { kws: core.slice(7).split(" "), sector: "Cross-Sector" };
@@ -409,7 +409,7 @@ function evalBlock(rows: Row[], block: Block, extraModifiers: string[] = [], ext
       total += v;
     });
   }
-  return { total, rows: out, sector, core: block.core_category };
+  return { total, rows: out, sector, core: block.core_category, filters };
 }
 
 
@@ -422,7 +422,7 @@ function combine(evals: Eval[], operator: "AND" | "OR" | "EXCLUDE"): Eval {
   if (!live.length) return { total: 0, rows: [], sector: evals[0]?.sector || "Cross-Sector", core: evals.map((e) => e.core).join(" / ") };
   if (live.length === 1) return live[0];
 
-  const merged: Eval = { total: 0, rows: [], sector: live[0].sector, core: live.map((e) => e.core).join(" / ") };
+  const merged: Eval = { total: 0, rows: [], sector: live[0].sector, core: live.map((e) => e.core).join(" / "), filters: live[0].filters };
   const totals = live.map((e) => e.total);
   const sameSector = new Set(live.map((e) => e.sector)).size === 1;
 
@@ -483,6 +483,10 @@ function assemble(title: string, ev: Eval, notes: string): PlanResult {
     .sort((a, b) => b.volume - a.volume);
 
   const partners = Array.from(new Set(list.flatMap((g) => g.partners)));
+  const f = ev.filters || {};
+  if (f.geo_tier) GEOS.forEach((l, i) => { if (l !== f.geo_tier) gSplit[i] = 0; });
+  if (f.age_bucket) AGES.forEach((l, i) => { if (l !== f.age_bucket) aSplit[i] = 0; });
+  if (f.gender) GENDERS.forEach((l, i) => { if (l !== f.gender) xSplit[i] = 0; });
   const toSplit = (arr: number[], labels: string[]): Split[] => {
     const sum = arr.reduce((a, b) => a + b, 0) || 1;
     return labels
@@ -511,7 +515,7 @@ function assemble(title: string, ev: Eval, notes: string): PlanResult {
 export function runSearch(rows: Row[], qRaw: string): PlanResult {
   const { blocks, operator, premium } = parseQueryToBlocks(qRaw);
   const evals = blocks.map((b) => evalBlock(rows, b));
-  const ev = combine(evals.filter((e) => e.total > 0).length ? evals : evals, operator);
+  const ev = combine(evals, operator);
   const notes = `Matched relevant partner audience signals across ${new Set(evals.map((e) => e.sector)).size} planning sector(s), grouped similar cohort meanings and applied planning-grade geo, age and gender cuts.${premium ? " Premium and high-value indicators were prioritised." : ""}`;
   return assemble(qRaw.trim().replace(/\b\w/g, (c) => c.toUpperCase()), ev, notes);
 }

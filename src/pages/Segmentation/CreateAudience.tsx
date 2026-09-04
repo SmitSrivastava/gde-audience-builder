@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Play, Code, Plus, Trash2, Info, Save } from 'lucide-react';
+import { Play, Code, Plus, Trash2, Info, Save, Sparkles, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { allAudiences, audienceQueryConfigs, defaultQueryConfig, ALL_PARTNERS, fieldToPartners } from '@/data/audiences';
 import { useSavedAudiences } from '@/contexts/SavedAudiencesContext';
+import { supabase } from '@/integrations/supabase/client';
 
 interface QueryRule { id: string; field: string; operator: string; value: string; logic: 'AND' | 'OR'; }
 
@@ -144,6 +145,22 @@ const CreateAudience = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [resultSize, setResultSize] = useState('14.2M');
   const [resultSizeNum, setResultSizeNum] = useState(14200000);
+
+  // AI natural-language cohort builder
+  const [nlPrompt, setNlPrompt] = useState('');
+  const [isInterpreting, setIsInterpreting] = useState(false);
+  const [aiSummary, setAiSummary] = useState('');
+  const [catalogFields, setCatalogFields] = useState<string[]>([]);
+
+  useEffect(() => {
+    supabase.from('attribute_catalog').select('field').limit(2000).then(({ data }) => {
+      if (data) setCatalogFields([...new Set(data.map(d => d.field))]);
+    });
+  }, []);
+
+  const fieldOptions = useMemo(() => {
+    return [...new Set([...ALL_FIELDS, ...catalogFields])];
+  }, [catalogFields]);
 
   useEffect(() => {
     if (matchedAudience) {

@@ -14,6 +14,8 @@ import Activation from "./pages/Activation";
 import NotFound from "./pages/NotFound";
 import PlanningPage from "./pages/Planning/PlanningPage";
 import SwiggyPartnerDashboard from "./pages/Partner/SwiggyPartnerDashboard";
+import CohortPlanner from "./pages/Planning/CohortPlanner";
+
 import './index.css';
 
 const queryClient = new QueryClient();

@@ -1,342 +1,28 @@
-import { useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
+import {
+  Row,
+  Expression,
+  BlockNode,
+  GroupNode,
+  Block,
+  fmt,
+  parseCSV,
+  getBundledRows,
+  datasetStats,
+  runSearch,
+  runBuild,
+  CORE_LIST,
+  CORE_CATEGORIES,
+  MODIFIERS,
+  INTENTS,
+  GEOS,
+  AGES,
+  GENDERS,
+  PlanResult,
+} from "@/lib/planningEngine";
 
-/* ---------------- types ---------------- */
-type Row = {
-  partner: string;
-  category: string;
-  sub: string;
-  signal: string;
-  geo: string;
-  age: string;
-  gender: string;
-  volume: number;
-  text: string;
-  sector: string;
-  layer: string;
-};
+const LS_KEY = "gde_planning_dataset_v1";
 
-type Group = {
-  key: string;
-  label: string;
-  sector: string;
-  layer: string;
-  partners: string[];
-  volume: number;
-  rows: Row[];
-};
-
-/* ---------------- mappings ---------------- */
-const SECTORS: Record<string, string[]> = {
-  "Fashion & Beauty": ["beauty", "skincare", "skin care", "cosmetic", "cosmetics", "makeup", "personal care", "grooming", "fashion", "apparel", "clothing", "shoes", "footwear", "jewellery", "jewelry", "salon", "fragrance", "hair care", "bath"],
-  BFSI: ["bank", "banking", "finance", "financial", "credit", "debit", "loan", "insurance", "card", "upi", "payment", "payments", "wallet", "emi", "investment", "mutual fund", "trading", "transaction", "pos", "razorpay", "pinelabs"],
-  Auto: ["auto", "car", "cars", "suv", "sedan", "hatchback", "2w", "4w", "two wheeler", "four wheeler", "bike", "motorcycle", "scooter", "ev", "electric vehicle", "vehicle"],
-  "CPG / FMCG": ["grocery", "snack", "snacks", "munchie", "munchies", "food", "beverage", "beverages", "cold drink", "juices", "dairy", "biscuit", "biscuits", "chips", "chocolate", "masala", "packaged food", "q-commerce", "quick commerce", "zepto", "fruits", "vegetables", "atta", "rice", "sweet", "frozen", "tea", "coffee", "protein"],
-  "Travel & Hospitality": ["travel", "traveller", "travellers", "travelers", "flight", "hotel", "holiday", "vacation", "tourism", "resort", "airline", "train", "bus", "commute", "airport"],
-  Education: ["college", "student", "students", "education", "course", "coaching", "exam", "mba", "engineering", "university", "edtech", "learning", "collegedunia"],
-  "Consumer Electronics": ["mobile", "smartphone", "handset", "phone", "device", "laptop", "electronics", "gadget", "tablet", "android", "ios", "5g", "appliance", "appliances"],
-  "Digital & Apps": ["app", "apps", "gaming", "ott", "music", "streaming", "social", "content", "digital", "internet", "online"],
-};
-const CROSS = ["affluent", "premium", "high value", "high-value", "metro", "urban", "family", "young", "male", "female", "working professional", "shopper", "consumer", "luxury"];
-
-const LAYERS: Record<string, string[]> = {
-  Demographics: ["age", "gender", "male", "female", "student", "family", "parent", "children", "kids", "senior", "working professional", "demographic"],
-  Affluence: ["premium", "affluent", "high value", "high-value", "luxury", "income", "spend", "spender", "expensive", "high ticket", "credit card", "affluence", "elite", "platinum", "signature"],
-  Commerce: ["buyer", "buyers", "purchase", "purchased", "shopper", "shopping", "grocery", "basket", "transaction", "retail", "q-commerce", "quick commerce", "transactor", "order"],
-  Intent: ["intent", "intender", "interested", "looking for", "search", "researching", "planning to buy", "in-market", "rfq", "enquiry"],
-  "Digital & App": ["app", "online", "digital", "gaming", "ott", "streaming", "social", "mobile internet", "upi", "platform"],
-  "Location & Mobility": ["metro", "tier", "city", "commute", "travel", "airport", "location", "mobility", "region", "geography"],
-};
-
-const SYNONYMS: Record<string, string> = {
-  skincare: "beauty_skincare", "skin care": "beauty_skincare", beauty: "beauty_skincare", cosmetic: "beauty_skincare", makeup: "beauty_skincare", "personal care": "beauty_skincare",
-  grocery: "grocery_qcommerce", "q-commerce": "grocery_qcommerce", "quick commerce": "grocery_qcommerce", basket: "grocery_qcommerce", snack: "grocery_qcommerce", snacks: "grocery_qcommerce", munchies: "grocery_qcommerce",
-  suv: "auto_4w_suv", car: "auto_4w_suv", "4w": "auto_4w_suv", "four wheeler": "auto_4w_suv",
-  loan: "bfsi_credit_finance", credit: "bfsi_credit_finance", finance: "bfsi_credit_finance", banking: "bfsi_credit_finance",
-  upi: "digital_payments", payment: "digital_payments", payments: "digital_payments", wallet: "digital_payments",
-  college: "education_students", student: "education_students", education: "education_students", course: "education_students",
-  traveller: "travel_hospitality", travel: "travel_hospitality", hotel: "travel_hospitality", flight: "travel_hospitality",
-};
-
-const STOP = new Set(["users", "user", "audience", "audiences", "segment", "segments", "cohort", "cohorts", "interested", "intenders", "intender", "the", "of", "in", "for", "a", "an", "and", "with", "to", "last", "days", "total", "active"]);
-const PREMIUM_WORDS = ["premium", "affluent", "luxury", "high value", "high-value", "high spender", "elite", "platinum", "signature", "high ticket"];
-
-/* ---------------- helpers ---------------- */
-const clean = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9\s-]/g, " ").replace(/\s+/g, " ").trim();
-const tokens = (s: string) => clean(s).split(" ").filter((w) => w.length > 2 && !STOP.has(w));
-
-function classify(map: Record<string, string[]>, text: string, fallback: string) {
-  let best = fallback;
-  let score = 0;
-  for (const [name, kws] of Object.entries(map)) {
-    let s = 0;
-    for (const k of kws) if (text.includes(k)) s += k.length > 5 ? 2 : 1;
-    if (s > score) {
-      score = s;
-      best = name;
-    }
-  }
-  return best;
-}
-
-const fmt = (n: number) => {
-  if (!isFinite(n) || n <= 0) return "0";
-  if (n >= 1e9) return (n / 1e9).toFixed(2) + "Bn";
-  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
-  if (n >= 1e3) return (n / 1e3).toFixed(0) + "K";
-  return Math.round(n).toLocaleString();
-};
-
-function pick(h: string[], names: string[]) {
-  for (const n of names) {
-    const i = h.indexOf(n);
-    if (i >= 0) return i;
-  }
-  return -1;
-}
-
-function parseCSV(text: string): Row[] {
-  const lines = text.split(/\r?\n/);
-  const header = (lines[0] || "").replace(/^\uFEFF/, "").split(",").map((h) => h.trim().toLowerCase());
-  const iP = pick(header, ["partner_name", "partner", "source_partner"]);
-  const iC = pick(header, ["category", "raw_category"]);
-  const iS = pick(header, ["sub_category", "raw_sub_category", "subcategory"]);
-  const iSig = pick(header, ["signal", "raw_signal", "audience_name", "cohort_name", "attribute"]);
-  const iG = pick(header, ["geo_tier", "tier", "city_tier"]);
-  const iA = pick(header, ["age_bucket", "age", "age_band"]);
-  const iGen = pick(header, ["gender_bucket", "gender"]);
-  const iV = pick(header, ["volume", "final_volume", "audience_volume", "source_volume"]);
-  const out: Row[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line) continue;
-    const c = line.split(",");
-    const partner = (c[iP] || "").trim() || "Unknown Partner";
-    const category = (c[iC] || "").trim();
-    const sub = (c[iS] || "").trim();
-    const signal = (c[iSig] || "").trim() || category || "Audience Signal";
-    const geo = (c[iG] || "").trim() || "Unknown";
-    const age = (c[iA] || "").trim() || "Unknown Age";
-    const gender = (c[iGen] || "").trim() || "Unknown Gender";
-    const volume = Number(String(c[iV] ?? "").replace(/[",]/g, "")) || 0;
-    const text = clean(`${partner} ${category} ${sub} ${signal}`);
-    const sector = (() => {
-      let best = "Cross-Sector";
-      let sc = 0;
-      for (const [name, kws] of Object.entries(SECTORS)) {
-        let s = 0;
-        for (const k of kws) if (text.includes(k)) s += k.length > 5 ? 2 : 1;
-        if (s > sc) {
-          sc = s;
-          best = name;
-        }
-      }
-      if (sc === 0 && CROSS.some((k) => text.includes(k))) best = "Cross-Sector";
-      return best;
-    })();
-    const layer = classify(LAYERS, text, "Cross-Sector Consumer Signals");
-    out.push({ partner, category, sub, signal, geo, age, gender, volume, text, sector, layer });
-  }
-  return out;
-}
-
-/* -------------- query engine -------------- */
-function normKey(r: Row) {
-  const t = tokens(`${r.signal} ${r.sub}`).map((w) => SYNONYMS[w] || w.replace(/s$/, ""));
-  return `${Array.from(new Set(t)).sort().slice(0, 4).join("_")}|${r.sector}|${r.layer}`;
-}
-
-const AGE_MAP = [
-  { re: /18\s*-?\s*24|less than 22|under 22|gen z|youth|teen/, buckets: ["Less than 22", "23-28"] },
-  { re: /25\s*-?\s*34/, buckets: ["23-28", "29-34"] },
-  { re: /35\s*-?\s*44/, buckets: ["35-40", "41-46"] },
-  { re: /45\+|45 plus|senior/, buckets: ["47-52", "52+"] },
-];
-
-function runQuery(rows: Row[], qRaw: string) {
-  const q = clean(qRaw);
-  const qt = tokens(qRaw);
-  const isPremium = PREMIUM_WORDS.some((w) => q.includes(w));
-  const gender = /female|women|woman|girls/.test(q) ? "Female" : /\bmale|men\b|man\b|boys/.test(q) ? "Male" : null;
-  const geo = /metro/.test(q) ? "Metro" : /tier\s*-?\s*1/.test(q) ? "Tier 1" : /tier\s*-?\s*2/.test(q) ? "Tier 2" : /tier\s*-?\s*3/.test(q) ? "Tier 3" : null;
-  let ages: string[] | null = null;
-  for (const a of AGE_MAP) if (a.re.test(q)) ages = a.buckets;
-  if (/college|student/.test(q)) ages = ["Less than 22", "23-28"];
-
-  const isMigration = /(not|non|exclude|excluding|without|migration)/.test(q);
-  const qSector = (() => {
-    let best: string | null = null;
-    let sc = 0;
-    for (const [name, kws] of Object.entries(SECTORS)) {
-      let s = 0;
-      for (const k of kws) if (q.includes(k)) s += 2;
-      if (s > sc) {
-        sc = s;
-        best = name;
-      }
-    }
-    return best;
-  })();
-
-  const scored: { r: Row; s: number }[] = [];
-  const scoreOf = new Map<Row, number>();
-  for (const r of rows) {
-    if (gender && r.gender !== gender && r.gender !== "Unknown Gender") continue;
-    if (geo && r.geo !== geo) continue;
-    if (ages && !ages.includes(r.age)) continue;
-    let s = 0;
-    const sig = clean(r.signal);
-    if (q.length > 4 && sig.includes(q)) s += 10;
-    for (const w of qt) {
-      if (sig.includes(w)) s += 5;
-      if (clean(r.category).includes(w)) s += 4;
-      if (clean(r.sub).includes(w)) s += 4;
-    }
-    if (qSector && r.sector === qSector) s += 6;
-    else if (qSector && r.sector !== "Cross-Sector") s -= 4;
-    if (isPremium && PREMIUM_WORDS.some((w) => r.text.includes(w))) s += 6;
-    if (isMigration && /(cash|cod|debit|atm|card|pos|bank)/.test(r.text)) s += 5;
-    if (isMigration && /(upi|wallet)/.test(r.text)) s -= 8;
-    if (gender || geo || ages) s += 2;
-    if (s >= 5) {
-      scored.push({ r, s });
-      scoreOf.set(r, s);
-    }
-  }
-
-
-  const strong = scored.filter((x) => x.s >= 8);
-  const used = strong.length >= 10 ? strong : scored;
-
-  // group
-  const groups = new Map<string, Group>();
-  for (const { r } of used) {
-    const k = normKey(r);
-    let g = groups.get(k);
-    if (!g) {
-      g = { key: k, label: r.signal.replace(/\s*-\s*Last \d+ Days?/i, "").trim(), sector: r.sector, layer: r.layer, partners: [], volume: 0, rows: [] };
-      groups.set(k, g);
-    }
-    g.rows.push(r);
-    if (!g.partners.includes(r.partner)) g.partners.push(r.partner);
-  }
-
-  const cellFactor = (partnersCount: number) => (partnersCount > 2 ? 0.3 : 0.4);
-  const premiumFactor = isPremium && !scored.some(({ r }) => PREMIUM_WORDS.some((w) => r.text.includes(w))) ? 0.35 : 1;
-
-  /* ---- query-intent skews so splits react to what the planner typed ---- */
-  const isMass = /(value|budget|mass|rural|bharat|entry level|affordable|small town)/.test(q);
-  const isYoung = /(gen z|youth|young|college|student|teen|18|22|24|gaming|ott|streaming|social|app)/.test(q);
-  const isFamily = /(family|parent|mother|father|household|kids|children|baby)/.test(q);
-  const isMature = /(senior|retire|45|50|insurance|investment|mutual fund|suv|sedan|luxury car|home loan)/.test(q);
-  const femaleTilt = /(beauty|skincare|skin care|cosmetic|makeup|salon|fragrance|personal care|jewell|saree|women|female)/.test(q);
-  const maleTilt = /(bike|motorcycle|scooter|auto|car|suv|gaming|cricket|sports|men|male|trading|shaving|grooming)/.test(q);
-
-  const geoW = (g: string) => {
-    const t = clean(g);
-    if (isPremium) return t.includes("metro") ? 1.7 : t.includes("1") ? 1.25 : t.includes("2") ? 0.65 : 0.4;
-    if (isMass) return t.includes("metro") ? 0.55 : t.includes("1") ? 0.85 : t.includes("2") ? 1.3 : 1.6;
-    if (qSector === "Travel & Hospitality" || qSector === "Digital & Apps") return t.includes("metro") ? 1.35 : t.includes("1") ? 1.1 : 0.8;
-    if (qSector === "CPG / FMCG") return t.includes("metro") ? 1.15 : t.includes("2") ? 1.1 : 0.95;
-    return 1;
-  };
-
-  const ageStart = (a: string) => {
-    const m = clean(a).match(/(\d+)/);
-    if (/less than/.test(clean(a))) return 20;
-    return m ? Number(m[1]) : 33;
-  };
-  const ageW = (a: string) => {
-    const st = ageStart(a);
-    let w = 1;
-    if (isYoung) w *= st <= 28 ? 1.8 : st <= 34 ? 1.1 : st <= 46 ? 0.55 : 0.3;
-    if (isFamily) w *= st >= 29 && st <= 46 ? 1.6 : st < 29 ? 0.6 : 0.8;
-    if (isMature) w *= st >= 41 ? 1.7 : st >= 35 ? 1.2 : 0.5;
-    if (isPremium) w *= st >= 29 && st <= 52 ? 1.25 : 0.8;
-    return w;
-  };
-
-  const genW = (gd: string) => {
-    const t = clean(gd);
-    if (femaleTilt && !maleTilt) return t.includes("female") ? 1.9 : t.includes("male") ? 0.55 : 1;
-    if (maleTilt && !femaleTilt) return t.includes("female") ? 0.55 : t.includes("male") ? 1.7 : 1;
-    return 1;
-  };
-
-  const splitGeo = new Map<string, number>();
-  const splitAge = new Map<string, number>();
-  const splitGen = new Map<string, number>();
-  let total = 0;
-  let wGeo = 0;
-  let wAge = 0;
-  let wGen = 0;
-
-  for (const g of groups.values()) {
-    const cells = new Map<string, Map<string, number>>();
-    const cellScore = new Map<string, number[]>();
-    for (const r of g.rows) {
-      const ck = `${r.geo}|${r.age}|${r.gender}`;
-      let m = cells.get(ck);
-      if (!m) {
-        m = new Map();
-        cells.set(ck, m);
-      }
-      m.set(r.partner, Math.max(m.get(r.partner) || 0, r.volume));
-      const cs = cellScore.get(ck) || [];
-      cs.push(scoreOf.get(r) || 1);
-      cellScore.set(ck, cs);
-    }
-    let gv = 0;
-    for (const [ck, m] of cells) {
-      const vals = Array.from(m.values()).sort((a, b) => b - a);
-      const f = cellFactor(vals.length);
-      let v = (vals[0] || 0) + vals.slice(1).reduce((a, b) => a + b * f, 0);
-      v *= premiumFactor;
-      gv += v;
-      const [gt, ab, gd] = ck.split("|");
-      const sc = cellScore.get(ck) || [1];
-      const rel = sc.reduce((a, b) => a + b, 0) / sc.length / 10;
-      const base = v * Math.max(0.2, rel);
-      const vg = base * geoW(gt);
-      const va = base * ageW(ab);
-      const vd = base * genW(gd);
-      splitGeo.set(gt, (splitGeo.get(gt) || 0) + vg);
-      splitAge.set(ab, (splitAge.get(ab) || 0) + va);
-      splitGen.set(gd, (splitGen.get(gd) || 0) + vd);
-      wGeo += vg;
-      wAge += va;
-      wGen += vd;
-    }
-    g.volume = gv;
-    total += gv;
-  }
-
-  const list = Array.from(groups.values()).sort((a, b) => b.volume - a.volume);
-  const partners = new Set<string>();
-  list.forEach((g) => g.partners.forEach((p) => partners.add(p)));
-  const confidence = strong.length > 200 && partners.size >= 3 ? "High" : strong.length > 30 || partners.size >= 2 ? "Medium" : "Low";
-
-  const toSplit = (m: Map<string, number>, w: number) =>
-    Array.from(m.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([k, v]) => ({ label: k, value: w ? (v / w) * total : 0, pct: w ? (v / w) * 100 : 0 }));
-
-
-  return {
-    title: qRaw.trim().replace(/\b\w/g, (c) => c.toUpperCase()),
-    total,
-    confidence,
-    groups: list.slice(0, 8),
-    allGroups: list,
-    partners: Array.from(partners),
-    geo: toSplit(splitGeo, wGeo),
-    age: toSplit(splitAge, wAge),
-    gender: toSplit(splitGen, wGen),
-    isPremium,
-    isMigration,
-  };
-}
-
-/* ---------------- UI ---------------- */
 const Bars = ({ title, data }: { title: string; data: { label: string; value: number; pct: number }[] }) => (
   <div>
     <div className="mb-3 text-sm font-semibold text-slate-700">{title}</div>
@@ -364,32 +50,156 @@ const LAYER_CARDS = [
   { t: "Demographics", d: "Age, gender and household cuts", g: "from-indigo-500 to-blue-500" },
   { t: "Affluence", d: "Premium and high-value indicators", g: "from-violet-500 to-fuchsia-500" },
   { t: "Commerce", d: "Purchase and basket behaviour", g: "from-cyan-500 to-teal-500" },
-  { t: "Lifestyle", d: "Interests and affinity signals", g: "from-emerald-500 to-lime-500" },
-  { t: "Digital & App", d: "App, payments and online activity", g: "from-sky-500 to-indigo-500" },
+  { t: "Lifestyle", d: "Interests and affinity signals", g: "from-sky-500 to-indigo-500" },
+  { t: "Digital & App", d: "App, payments and online activity", g: "from-blue-500 to-violet-500" },
   { t: "Intent", d: "In-market and enquiry signals", g: "from-amber-500 to-orange-500" },
 ];
 
+let uid = 0;
+const nid = () => `n${++uid}`;
+const newBlock = (): BlockNode => ({ id: nid(), type: "BLOCK", block: { id: nid(), core_category: CORE_LIST[0], modifiers: [], filters: {} } });
+const newGroup = (): GroupNode => ({ id: nid(), type: "GROUP", operator: "AND", children: [newBlock(), newBlock()], group_modifiers: [], filters: {} });
+
+/* ---------------- Build Audience editor ---------------- */
+const FilterRow = ({ filters, onChange }: { filters: Block["filters"]; onChange: (f: Block["filters"]) => void }) => (
+  <div className="flex flex-wrap gap-2">
+    {[
+      { k: "geo_tier" as const, list: GEOS, ph: "Any geo tier" },
+      { k: "age_bucket" as const, list: AGES, ph: "Any age band" },
+      { k: "gender" as const, list: GENDERS, ph: "Any gender" },
+    ].map((f) => (
+      <select
+        key={f.k}
+        value={(filters as any)[f.k] || ""}
+        onChange={(e) => onChange({ ...filters, [f.k]: e.target.value || undefined })}
+        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700"
+      >
+        <option value="">{f.ph}</option>
+        {f.list.map((o) => (
+          <option key={o}>{o}</option>
+        ))}
+      </select>
+    ))}
+  </div>
+);
+
+const ModifierChips = ({ selected, onToggle }: { selected: string[]; onToggle: (m: string) => void }) => (
+  <div className="flex flex-wrap gap-1.5">
+    {MODIFIERS.map((m) => (
+      <button
+        key={m}
+        onClick={() => onToggle(m)}
+        className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+          selected.includes(m) ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow" : "border border-slate-200 bg-white text-slate-600 hover:border-indigo-300"
+        }`}
+      >
+        {m}
+      </button>
+    ))}
+  </div>
+);
+
+function ExpressionEditor({ node, onChange, onRemove, depth = 0 }: { node: Expression; onChange: (n: Expression) => void; onRemove?: () => void; depth?: number }) {
+  if (node.type === "BLOCK") {
+    const b = node.block;
+    const set = (patch: Partial<Block>) => onChange({ ...node, block: { ...b, ...patch } });
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-1 flex-wrap gap-2">
+            <select value={b.core_category} onChange={(e) => set({ core_category: e.target.value })} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800">
+              {CORE_LIST.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </select>
+            <select value={b.intent || ""} onChange={(e) => set({ intent: e.target.value || undefined })} className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700">
+              <option value="">Any intent</option>
+              {INTENTS.map((i) => (
+                <option key={i}>{i}</option>
+              ))}
+            </select>
+            <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700">{CORE_CATEGORIES[b.core_category]?.sector}</span>
+          </div>
+          {onRemove && (
+            <button onClick={onRemove} className="text-xs font-medium text-slate-400 hover:text-rose-500">
+              Remove
+            </button>
+          )}
+        </div>
+        <div className="mt-3 space-y-2">
+          <ModifierChips selected={b.modifiers} onToggle={(m) => set({ modifiers: b.modifiers.includes(m) ? b.modifiers.filter((x) => x !== m) : [...b.modifiers, m] })} />
+          <FilterRow filters={b.filters} onChange={(f) => set({ filters: f })} />
+        </div>
+      </div>
+    );
+  }
+
+  const g = node;
+  const set = (patch: Partial<GroupNode>) => onChange({ ...g, ...patch });
+  return (
+    <div className={`rounded-2xl border-2 border-dashed p-4 ${depth % 2 ? "border-cyan-200 bg-cyan-50/40" : "border-violet-200 bg-violet-50/40"}`}>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 bg-white">
+          {(["AND", "OR", "EXCLUDE"] as const).map((op) => (
+            <button key={op} onClick={() => set({ operator: op })} className={`px-3 py-1.5 text-xs font-semibold ${g.operator === op ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+              {op}
+            </button>
+          ))}
+        </div>
+        <ModifierChips selected={g.group_modifiers} onToggle={(m) => set({ group_modifiers: g.group_modifiers.includes(m) ? g.group_modifiers.filter((x) => x !== m) : [...g.group_modifiers, m] })} />
+        <FilterRow filters={g.filters} onChange={(f) => set({ filters: f })} />
+        {onRemove && (
+          <button onClick={onRemove} className="ml-auto text-xs font-medium text-slate-400 hover:text-rose-500">
+            Remove group
+          </button>
+        )}
+      </div>
+      <div className="space-y-3">
+        {g.children.map((c, i) => (
+          <ExpressionEditor
+            key={c.id}
+            node={c}
+            depth={depth + 1}
+            onChange={(n) => set({ children: g.children.map((x, j) => (j === i ? n : x)) })}
+            onRemove={g.children.length > 1 ? () => set({ children: g.children.filter((_, j) => j !== i) }) : undefined}
+          />
+        ))}
+      </div>
+      <div className="mt-3 flex gap-2">
+        <button onClick={() => set({ children: [...g.children, newBlock()] })} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-indigo-300">
+          + Add audience block
+        </button>
+        <button onClick={() => set({ children: [...g.children, newGroup()] })} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-indigo-300">
+          + Add nested group
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- page ---------------- */
 export default function CohortPlanner() {
-  const [rows, setRows] = useState<Row[] | null>(null);
+  const [rows, setRows] = useState<Row[]>(() => getBundledRows());
   const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState<"search" | "build">("search");
   const [query, setQuery] = useState("");
-  const [result, setResult] = useState<ReturnType<typeof runQuery> | null>(null);
+  const [result, setResult] = useState<PlanResult | null>(null);
+  const [expr, setExpr] = useState<Expression>(() => newGroup());
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const stats = useMemo(() => {
-    if (!rows) return null;
-    const p = new Set<string>();
-    const s = new Set<string>();
-    const t = new Set<string>();
-    let vol = 0;
-    for (const r of rows) {
-      p.add(r.partner);
-      s.add(r.signal);
-      t.add(r.geo);
-      vol += r.volume;
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Row[];
+        if (Array.isArray(parsed) && parsed.length) setRows(parsed);
+      }
+    } catch {
+      /* keep bundled dataset */
     }
-    return { rows: rows.length, partners: p.size, signals: s.size, tiers: t.size, vol };
-  }, [rows]);
+  }, []);
+
+  const stats = useMemo(() => datasetStats(rows), [rows]);
 
   const onFile = async (f: File) => {
     setLoading(true);
@@ -403,21 +213,35 @@ export default function CohortPlanner() {
       } else {
         text = await f.text();
       }
-      setRows(parseCSV(text));
+      const parsed = parseCSV(text);
+      if (parsed.length) {
+        setRows(parsed);
+        try {
+          localStorage.setItem(LS_KEY, JSON.stringify(parsed));
+        } catch {
+          /* stays available for this session */
+        }
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const search = (q: string) => {
-    if (!rows || !q.trim()) return;
+    if (!q.trim()) return;
     setQuery(q);
-    setResult(runQuery(rows, q));
+    setResult(runSearch(rows, q));
+  };
+
+  const build = () => {
+    const labels: string[] = [];
+    const walk = (n: Expression) => (n.type === "BLOCK" ? labels.push(n.block.core_category) : n.children.forEach(walk));
+    walk(expr);
+    setResult(runBuild(rows, expr, Array.from(new Set(labels)).join(" + ") || "Custom Audience"));
   };
 
   return (
     <div className="flex min-h-screen bg-slate-50 text-slate-900">
-      {/* sidebar */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white p-5 lg:flex">
         <div className="mb-8">
           <div className="text-lg font-bold tracking-tight">GDE Platform</div>
@@ -447,10 +271,16 @@ export default function CohortPlanner() {
             </div>
           </div>
 
-          {/* upload + search */}
+          {/* panel */}
           <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-lg font-semibold">What cohort are you looking for?</div>
+              <div className="inline-flex overflow-hidden rounded-xl border border-slate-200">
+                {(["search", "build"] as const).map((t) => (
+                  <button key={t} onClick={() => setTab(t)} className={`px-5 py-2 text-sm font-semibold ${tab === t ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}>
+                    {t === "search" ? "Search Audience" : "Build Audience"}
+                  </button>
+                ))}
+              </div>
               <div className="flex items-center gap-3">
                 <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
                 <button onClick={() => fileRef.current?.click()} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
@@ -459,51 +289,65 @@ export default function CohortPlanner() {
               </div>
             </div>
 
-            {loading && <div className="mt-3 text-sm text-indigo-600">Loading dataset…</div>}
-            {stats && !loading && (
-              <div className="mt-3 rounded-xl bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+            {loading ? (
+              <div className="mt-3 text-sm text-indigo-600">Loading dataset…</div>
+            ) : (
+              <div className="mt-3 rounded-xl bg-indigo-50 px-4 py-2 text-sm text-indigo-800">
                 Dataset loaded successfully · {stats.rows.toLocaleString()} rows · {stats.partners} partner sources · {stats.signals.toLocaleString()} audience signals
               </div>
             )}
-            {!rows && !loading && <div className="mt-3 text-sm text-slate-500">Upload the audience dataset to start planning.</div>}
 
-            <div className="mt-5 flex gap-3">
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && search(query)}
-                placeholder="Search for audiences like premium skincare buyers, SUV intenders, UPI migration audience…"
-                className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm outline-none focus:border-indigo-400 focus:bg-white"
-              />
-              <button onClick={() => search(query)} className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-7 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-200 hover:opacity-95">
-                Find Scale
-              </button>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {EXAMPLES.map((e) => (
-                <button key={e} onClick={() => search(e)} className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700">
-                  {e}
+            {tab === "search" ? (
+              <>
+                <div className="mt-5 text-lg font-semibold">What cohort are you looking for?</div>
+                <div className="mt-3 flex gap-3">
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && search(query)}
+                    placeholder="Search for audiences like premium skincare buyers, SUV intenders, UPI migration audience…"
+                    className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm outline-none focus:border-indigo-400 focus:bg-white"
+                  />
+                  <button onClick={() => search(query)} className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-7 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-200 hover:opacity-95">
+                    Find Scale
+                  </button>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {EXAMPLES.map((e) => (
+                    <button key={e} onClick={() => search(e)} className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700">
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mt-5 text-lg font-semibold">Compose your audience</div>
+                <p className="mt-1 text-xs text-slate-500">Combine audience blocks with AND, OR and EXCLUDE. Modifiers and filters apply to the block or group they sit on.</p>
+                <div className="mt-4">
+                  <ExpressionEditor node={expr} onChange={setExpr} />
+                </div>
+                <button onClick={build} className="mt-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-200 hover:opacity-95">
+                  Calculate Audience Scale
                 </button>
-              ))}
-            </div>
+              </>
+            )}
           </div>
 
           {/* metrics */}
-          {stats && (
-            <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-              {[
-                { l: "Addressable Planning Universe", v: fmt(stats.vol) },
-                { l: "Audience Signals", v: stats.signals.toLocaleString() },
-                { l: "Partner Sources", v: String(stats.partners) },
-                { l: "Geo Tiers Available", v: String(stats.tiers) },
-              ].map((m) => (
-                <div key={m.l} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="text-3xl font-bold text-slate-900">{m.v}</div>
-                  <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{m.l}</div>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {[
+              { l: "Addressable Planning Universe", v: fmt(stats.vol) },
+              { l: "Audience Signals", v: stats.signals.toLocaleString() },
+              { l: "Partner Sources", v: String(stats.partners) },
+              { l: "Geo Tiers Available", v: String(stats.tiers) },
+            ].map((m) => (
+              <div key={m.l} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-3xl font-bold text-slate-900">{m.v}</div>
+                <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{m.l}</div>
+              </div>
+            ))}
+          </div>
 
           {/* layers */}
           <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-6">
@@ -528,7 +372,7 @@ export default function CohortPlanner() {
                   </div>
                   <span
                     className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      result.confidence === "High" ? "bg-emerald-50 text-emerald-700" : result.confidence === "Medium" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"
+                      result.confidence === "High" ? "bg-indigo-50 text-indigo-700" : result.confidence === "Medium" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"
                     }`}
                   >
                     Planning confidence: {result.confidence}
@@ -568,7 +412,6 @@ export default function CohortPlanner() {
                   </table>
                 </div>
 
-                {/* activation cards */}
                 {result.allGroups.length > 0 && (
                   <div className="mt-7 grid grid-cols-1 gap-4 md:grid-cols-3">
                     {[
@@ -594,11 +437,7 @@ export default function CohortPlanner() {
                 <Bars title="Gender split" data={result.gender} />
                 <div className="rounded-2xl bg-slate-50 p-4">
                   <div className="text-sm font-semibold text-slate-700">How this audience was built</div>
-                  <p className="mt-2 text-xs leading-relaxed text-slate-600">
-                    Matched relevant partner audience signals, grouped similar cohort meanings, and applied geo, age and gender planning cuts from the uploaded dataset.
-                    {result.isPremium && " Premium and high-value audience signals were prioritized."}
-                    {result.isMigration && " Built using alternate payment behaviour, digital readiness, and payment adoption signals."}
-                  </p>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-600">{result.notes}</p>
                   <div className="mt-3 text-xs text-slate-500">Partner sources: {result.partners.join(", ") || "—"}</div>
                 </div>
               </div>

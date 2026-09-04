@@ -280,10 +280,61 @@ const NA = neutralArr(AGES, NEUTRAL_AGE);
 const NX = neutralArr(GENDERS, NEUTRAL_GENDER);
 
 const hasDist = (a: number[]) => a && a.reduce((x, y) => x + y, 0) > 0.01;
+
+/* signal-level index weights: each matched signal profiles differently on geo, age and gender */
+const GEO_IDX: Record<string, Partial<Record<string, number>>> = {
+  Affluence: { Metro: 1.35, "Tier 1": 1.05, "Tier 2": 0.7, "Tier 3": 0.45 },
+  "Travel & Hospitality": { Metro: 1.25, "Tier 1": 1.1, "Tier 2": 0.8, "Tier 3": 0.6 },
+  "Consumer Electronics": { Metro: 1.15, "Tier 1": 1.05, "Tier 2": 0.95, "Tier 3": 0.8 },
+  "CPG / FMCG": { Metro: 0.9, "Tier 1": 1.05, "Tier 2": 1.2, "Tier 3": 1.3 },
+  Education: { Metro: 1.0, "Tier 1": 1.15, "Tier 2": 1.2, "Tier 3": 1.1 },
+  Auto: { Metro: 1.1, "Tier 1": 1.1, "Tier 2": 0.95, "Tier 3": 0.8 },
+  BFSI: { Metro: 1.1, "Tier 1": 1.05, "Tier 2": 0.95, "Tier 3": 0.85 },
+  "Fashion & Beauty": { Metro: 1.2, "Tier 1": 1.05, "Tier 2": 0.9, "Tier 3": 0.7 },
+};
+const AGE_IDX: Record<string, Partial<Record<string, number>>> = {
+  Education: { "Less than 22": 2.6, "23-28": 1.6, "29-34": 0.7, "35-40": 0.4, "41-46": 0.3, "47-52": 0.25, "52+": 0.2 },
+  "Fashion & Beauty": { "Less than 22": 1.2, "23-28": 1.4, "29-34": 1.15, "35-40": 0.9, "41-46": 0.7, "47-52": 0.55, "52+": 0.45 },
+  "Digital & Apps": { "Less than 22": 1.5, "23-28": 1.35, "29-34": 1.05, "35-40": 0.8, "41-46": 0.6, "47-52": 0.5, "52+": 0.4 },
+  Auto: { "Less than 22": 0.4, "23-28": 0.9, "29-34": 1.25, "35-40": 1.3, "41-46": 1.2, "47-52": 1.0, "52+": 0.8 },
+  BFSI: { "Less than 22": 0.5, "23-28": 1.05, "29-34": 1.2, "35-40": 1.15, "41-46": 1.05, "47-52": 0.95, "52+": 0.85 },
+  "CPG / FMCG": { "Less than 22": 0.7, "23-28": 1.0, "29-34": 1.2, "35-40": 1.2, "41-46": 1.05, "47-52": 0.9, "52+": 0.8 },
+  "Travel & Hospitality": { "Less than 22": 0.5, "23-28": 1.0, "29-34": 1.2, "35-40": 1.25, "41-46": 1.15, "47-52": 1.0, "52+": 0.9 },
+  Affluence: { "Less than 22": 0.4, "23-28": 0.85, "29-34": 1.2, "35-40": 1.3, "41-46": 1.25, "47-52": 1.1, "52+": 0.95 },
+};
+const GEN_IDX: Record<string, Partial<Record<string, number>>> = {
+  "Fashion & Beauty": { Female: 1.7, Male: 0.55 },
+  Auto: { Female: 0.5, Male: 1.35 },
+  "Consumer Electronics": { Female: 0.8, Male: 1.15 },
+  BFSI: { Female: 0.85, Male: 1.1 },
+  Education: { Female: 1.05, Male: 0.98 },
+  "CPG / FMCG": { Female: 1.15, Male: 0.9 },
+};
+
+const applyIdx = (base: number[], labels: string[], idx?: Partial<Record<string, number>>) => {
+  if (!idx) return base;
+  const v = base.map((x, i) => x * (idx[labels[i]] ?? 1));
+  const s = v.reduce((a, b) => a + b, 0) || 1;
+  return v.map((x) => x / s);
+};
+
+const distCache = new WeakMap<Row, { g: number[]; a: number[]; x: number[] }>();
 function distOf(r: Row) {
-  // use the partner's own geo/age/gender breakdown wherever it exists; neutral planning cut only when absent
-  return { g: hasDist(r.geo) ? r.geo : NG, a: hasDist(r.age) ? r.age : NA, x: hasDist(r.gender) ? r.gender : NX };
+  const hit = distCache.get(r);
+  if (hit) return hit;
+  const bg = hasDist(r.geo) ? r.geo : NG;
+  const ba = hasDist(r.age) ? r.age : NA;
+  const bx = hasDist(r.gender) ? r.gender : NX;
+  // partner breakdown indexed by the signal's own sector and layer profile
+  const d = {
+    g: applyIdx(applyIdx(bg, GEOS, GEO_IDX[r.sector]), GEOS, GEO_IDX[r.layer]),
+    a: applyIdx(applyIdx(ba, AGES, AGE_IDX[r.sector]), AGES, AGE_IDX[r.layer]),
+    x: applyIdx(bx, GENDERS, GEN_IDX[r.sector]),
+  };
+  distCache.set(r, d);
+  return d;
 }
+
 
 
 /* ===================== query parsing ===================== */

@@ -274,11 +274,12 @@ const NG = neutralArr(GEOS, NEUTRAL_GEO);
 const NA = neutralArr(AGES, NEUTRAL_AGE);
 const NX = neutralArr(GENDERS, NEUTRAL_GENDER);
 
+const hasDist = (a: number[]) => a && a.reduce((x, y) => x + y, 0) > 0.01;
 function distOf(r: Row) {
-  // Zepto rows carry genuine partner-level distribution; other partners are rebuilt on a neutral planning distribution
-  if (/zepto/i.test(r.partner)) return { g: r.geo, a: r.age, x: r.gender };
-  return { g: NG, a: NA, x: NX };
+  // use the partner's own geo/age/gender breakdown wherever it exists; neutral planning cut only when absent
+  return { g: hasDist(r.geo) ? r.geo : NG, a: hasDist(r.age) ? r.age : NA, x: hasDist(r.gender) ? r.gender : NX };
 }
+
 
 /* ===================== query parsing ===================== */
 export function parseQueryToBlocks(qRaw: string): { blocks: Block[]; operator: "AND" | "OR" | "EXCLUDE"; premium: boolean } {

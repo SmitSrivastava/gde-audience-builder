@@ -305,6 +305,44 @@ const CreateAudience = () => {
           </div>
         </div>
 
+        {/* AI Natural-Language Cohort Builder */}
+        <div className="bg-card rounded-xl p-6 neon-border relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-40 h-40 bg-primary/10 rounded-full blur-[60px] pointer-events-none"></div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles size={20} className="text-primary" />
+              <h3 className="text-lg font-semibold text-foreground">Describe Your Cohort</h3>
+              <span className="pill-chip text-xs">AI Powered</span>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Type in plain English — e.g. "premium beauty users in metros" or "luxury skincare buyers" — and AI builds the query from the attribute catalog.
+            </p>
+            <div className="flex items-center gap-3">
+              <input
+                type="text"
+                value={nlPrompt}
+                onChange={(e) => setNlPrompt(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleInterpret(); }}
+                placeholder="Describe the audience you need…"
+                className="flex-1 px-4 py-3 bg-background border border-border rounded-lg text-sm text-foreground focus:ring-2 focus:ring-primary/50"
+              />
+              <button
+                onClick={handleInterpret}
+                disabled={isInterpreting || !nlPrompt.trim()}
+                className={`flex items-center gap-2 px-5 py-3 rounded-lg font-medium text-sm transition-colors ${isInterpreting || !nlPrompt.trim() ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary/90 text-primary-foreground'}`}
+              >
+                {isInterpreting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                {isInterpreting ? 'Interpreting…' : 'Generate'}
+              </button>
+            </div>
+            {aiSummary && (
+              <p className="mt-3 text-sm text-primary/90 flex items-start gap-2">
+                <Sparkles size={14} className="mt-0.5 shrink-0" /> {aiSummary}
+              </p>
+            )}
+          </div>
+        </div>
+
         {/* Visual Query Builder */}
         <div className="bg-card rounded-xl p-6 neon-border">
           <div className="flex items-center justify-between mb-4">

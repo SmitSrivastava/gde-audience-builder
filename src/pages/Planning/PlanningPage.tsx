@@ -799,7 +799,7 @@ const BottomCTA = () => {
           <p className="text-sm text-slate-600 mt-1">Plan audiences by sector, signal, partner, reach, overlap, and activation potential.</p>
         </div>
         <motion.button
-          onClick={() => navigate('/segmentation')}
+          onClick={() => navigate('/planner')}
           whileHover={{ y: -2 }}
           className="group relative flex items-center gap-2 px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-md hover:shadow-xl hover:shadow-blue-200/60 transition-all"
         >

@@ -415,24 +415,41 @@ function evalBlock(rows: Row[], block: Block, extraModifiers: string[] = [], ext
 
 const sectorOf = (core: string) => (core.startsWith("__free:") ? "Cross-Sector" : CORE_CATEGORIES[core]?.sector || "Cross-Sector");
 
+const cohortOf = (r: Row) => r.key.split("|")[0];
+
 function combine(evals: Eval[], operator: "AND" | "OR" | "EXCLUDE"): Eval {
-  if (evals.length === 1) return evals[0];
-  const merged: Eval = { total: 0, rows: evals.flatMap((e) => e.rows), sector: evals[0]?.sector || "Cross-Sector", core: evals.map((e) => e.core).join(" / ") };
-  const totals = evals.map((e) => e.total);
-  const sameSector = new Set(evals.map((e) => e.sector)).size === 1;
+  const live = evals.filter((e) => e.rows.length);
+  if (!live.length) return { total: 0, rows: [], sector: evals[0]?.sector || "Cross-Sector", core: evals.map((e) => e.core).join(" / ") };
+  if (live.length === 1) return live[0];
+
+  const merged: Eval = { total: 0, rows: [], sector: live[0].sector, core: live.map((e) => e.core).join(" / ") };
+  const totals = live.map((e) => e.total);
+  const sameSector = new Set(live.map((e) => e.sector)).size === 1;
+
   if (operator === "AND") {
     const factor = sameSector ? 0.25 : 0.15;
     merged.total = Math.min(...totals) * factor;
+    // rows must describe the intersection, never the union
+    const sets = live.map((e) => new Set(e.rows.map((x) => cohortOf(x.r))));
+    const shared = live[0].rows.filter((x) => sets.every((s) => s.has(cohortOf(x.r))));
+    if (shared.length) merged.rows = shared;
+    else {
+      const smallest = [...live].sort((a, b) => a.total - b.total)[0];
+      merged.rows = smallest.rows;
+      merged.sector = smallest.sector;
+    }
   } else if (operator === "OR") {
     const sorted = [...totals].sort((a, b) => b - a);
-    const overlapPct = sameSector ? 0.4 : 0.15;
+    const overlapPct = sameSector ? 0.4 : 0.25;
     merged.total = sorted.reduce((a, b, i) => a + (i === 0 ? b : b * (1 - overlapPct)), 0);
+    merged.rows = live.flatMap((e) => e.rows);
   } else {
     const base = totals[0];
     const excl = totals.slice(1).reduce((a, b) => a + b, 0);
-    const overlapPct = sameSector ? 0.3 : 0.1;
+    const overlapPct = sameSector ? 0.3 : 0.15;
     merged.total = Math.max(0, base - Math.min(base, excl) * overlapPct);
-    merged.rows = evals[0].rows;
+    merged.rows = live[0].rows;
+    merged.sector = live[0].sector;
   }
   return merged;
 }

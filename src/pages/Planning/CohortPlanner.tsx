@@ -328,9 +328,9 @@ function runQuery(rows: Row[], qRaw: string) {
     groups: list.slice(0, 8),
     allGroups: list,
     partners: Array.from(partners),
-    geo: toSplit(splitGeo),
-    age: toSplit(splitAge),
-    gender: toSplit(splitGen),
+    geo: toSplit(splitGeo, wGeo),
+    age: toSplit(splitAge, wAge),
+    gender: toSplit(splitGen, wGen),
     isPremium,
     isMigration,
   };

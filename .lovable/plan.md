@@ -1,29 +1,30 @@
+# Recover the Generic WPP GDE Interface
 
-## Scope
-Only `src/pages/Planning/PlanningPage.tsx`. No other files touched. No functionality changes elsewhere.
+## Finding (read-only check complete)
 
-## 1. Fix the Audience 360 hero (HeroSection)
+The original generic WPP Data Exchange product is intact in git history. The Netflix pitch was built on top of it in the same codebase. Clean rollback points exist:
 
-Current bug: the ring container is `780×780px` but lives inside an `h-[640px]` flex box, so it overflows and clips. Cards push off-canvas and the silhouette no longer sits in the visual center of the ring — matching the broken screenshot.
+- `cac6e2c` — original GDE front-end application (fully generic)
+- `e681f6b` / `183de7e` / `712f709` — generic GDE with working Enrichment & Activation modules and the navy/dark-purple enterprise theme (the last "good generic" states)
+- `14286a0` — first Netflix rebrand commit; everything after is Netflix-pitch work
 
-Fixes:
-- Drop the fixed `h-[640px]` wrapper. Use a square container sized off a single `SIZE` constant (e.g. 620px) with `radius = (SIZE - cardWidth) / 2` so all 6 cards stay fully inside the visible area.
-- Make the SVG, the connector math, the center silhouette, and the 6 floating cards all derive from the same `SIZE` / `CENTER` constants so the silhouette is mathematically centered (`top:50% / left:50%`) and all 6 signal cards orbit symmetrically at the 6 clock positions (top, top-right, bottom-right, bottom, bottom-left, top-left).
-- Confirm the 6 signals render: Demographics, Affluence, Purchase, Psychographics, Digital, Intent (already in the `signals` array — the breakage is positional, not data).
-- Keep entrance/hover animation and connector lines as-is.
+## Options
 
-## 2. Audience Scale by Sector — large numbers, no sparkline
+**Option A — Restore generic version in this project (safest)**
+Use the chat History tab to revert to the version just before the Netflix overhaul. This restores the full generic GDE UI. The Netflix pitch changes stay visible in chat history and can be reapplied anytime.
 
-In the `AudienceScale` section:
-- Remove the `<Sparkline />` render and the `Sparkline` component usage.
-- Promote the value to the hero element of each tile: `text-4xl font-extrabold tabular-nums` with `CountUp` (already animates 0 → final on scroll into view). Add `suffix="M"`.
-- Keep the sector label below as small caption text. Keep hover lift and tooltip.
-- Tighten grid to look balanced now that sparkline is gone (e.g. `lg:grid-cols-7` stays, padding bumped slightly).
+**Option B — Separate the two products (recommended)**
+1. Revert this project to the pre-Netflix state (generic GDE), republish on the current URL.
+2. Create a new project from the Netflix-pitch state for the pitch demo, published on a different URL.
+This way both interfaces stay live — generic GDE on the main URL, Netflix demo on its own.
 
-## 3. Count-up on Addressable Consumers and Signals
+**Option C — Selective keep**
+Keep the Netflix-themed dashboard but strip Netflix branding (logo, show images, names) to return to a generic WPP look. More manual work, and loses the ability to demo the Netflix pitch later.
 
-The `MetricStrip` already uses `<CountUp>` for all four metrics including "Addressable Consumers" (350M+) and "Behavioral & Intent Signals" (2,000+). Verify they animate from 0 on first view; no logic change needed beyond making sure `inView` triggers (already wired with `useInView({ once: true })`).
+## Recommendation
 
-## Out of scope
-- No changes to sidebar, header, ecosystems, growth audiences, partner strips, CTA, or any other page.
-- No new dependencies.
+Option B: both products survive, URLs are clean, and no work is lost.
+
+## No code changes made
+
+Per your instruction, nothing was modified — this was a read-only check of git history.

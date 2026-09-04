@@ -178,6 +178,7 @@ function runQuery(rows: Row[], qRaw: string) {
   })();
 
   const scored: { r: Row; s: number }[] = [];
+  const scoreOf = new Map<Row, number>();
   for (const r of rows) {
     if (gender && r.gender !== gender && r.gender !== "Unknown Gender") continue;
     if (geo && r.geo !== geo) continue;
@@ -196,8 +197,12 @@ function runQuery(rows: Row[], qRaw: string) {
     if (isMigration && /(cash|cod|debit|atm|card|pos|bank)/.test(r.text)) s += 5;
     if (isMigration && /(upi|wallet)/.test(r.text)) s -= 8;
     if (gender || geo || ages) s += 2;
-    if (s >= 5) scored.push({ r, s });
+    if (s >= 5) {
+      scored.push({ r, s });
+      scoreOf.set(r, s);
+    }
   }
+
 
   const strong = scored.filter((x) => x.s >= 8);
   const used = strong.length >= 10 ? strong : scored;

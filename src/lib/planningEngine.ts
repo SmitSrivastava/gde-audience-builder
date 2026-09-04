@@ -127,12 +127,25 @@ export const fmt = (n: number) => {
   return Math.round(n).toLocaleString();
 };
 
+/* word-boundary / phrase matching — substring matching caused card→car, beverage→ev, apparel→app bleed */
+const kwCache = new Map<string, RegExp>();
+const kwRe = (k: string) => {
+  let re = kwCache.get(k);
+  if (!re) {
+    const esc = k.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&");
+    re = new RegExp(`(^|[^a-z0-9])${esc}(s|es)?([^a-z0-9]|$)`);
+    kwCache.set(k, re);
+  }
+  return re;
+};
+export const hasKw = (text: string, k: string) => kwRe(k).test(text);
+
 function classify(map: Record<string, string[]>, text: string, fallback: string) {
   let best = fallback;
   let score = 0;
   for (const [name, kws] of Object.entries(map)) {
     let s = 0;
-    for (const k of kws) if (text.includes(k)) s += k.length > 5 ? 2 : 1;
+    for (const k of kws) if (hasKw(text, k)) s += k.length > 5 ? 2 : 1;
     if (s > score) {
       score = s;
       best = name;
@@ -146,7 +159,7 @@ function coreOf(text: string) {
   let score = 0;
   for (const [name, c] of Object.entries(CORE_CATEGORIES)) {
     let s = 0;
-    for (const k of c.keywords) if (text.includes(k)) s += k.length > 5 ? 2 : 1;
+    for (const k of c.keywords) if (hasKw(text, k)) s += k.length > 5 ? 2 : 1;
     if (s > score) {
       score = s;
       best = name;
@@ -154,6 +167,7 @@ function coreOf(text: string) {
   }
   return best;
 }
+
 
 function buildRow(partner: string, category: string, sub: string, signal: string, volume: number, geo: number[], age: number[], gender: number[]): Row {
   const text = clean(`${partner} ${category} ${sub} ${signal}`);

@@ -14,7 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      attribute_catalog: {
+        Row: {
+          created_at: string
+          field: string
+          id: string
+          source_sheet: string | null
+          synonyms: string | null
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          field: string
+          id?: string
+          source_sheet?: string | null
+          synonyms?: string | null
+          value: string
+        }
+        Update: {
+          created_at?: string
+          field?: string
+          id?: string
+          source_sheet?: string | null
+          synonyms?: string | null
+          value?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

@@ -302,11 +302,12 @@ export function parseQueryToBlocks(qRaw: string): { blocks: Block[]; operator: "
     if (bucket) filters.age_bucket = bucket;
   }
 
-  // detect core categories mentioned
+  // detect anchor core categories mentioned (word-boundary, never on modifiers/intents/filters alone)
   const found: string[] = [];
   for (const [name, c] of Object.entries(CORE_CATEGORIES)) {
-    if (c.keywords.some((k) => new RegExp(`(^|\\s)${k.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}`).test(q))) found.push(name);
+    if (c.keywords.some((k) => hasKw(q, k))) found.push(name);
   }
+
   const operator: "AND" | "OR" | "EXCLUDE" = /\bexclude|not |except|without\b/.test(q) ? "EXCLUDE" : /\bor\b/.test(q) ? "OR" : "AND";
   const modifiers = PREMIUM_WORDS.filter((w) => q.includes(w));
   const blocks: Block[] = found.slice(0, 3).map((core, i) => ({ id: `q${i}`, core_category: core, modifiers, filters }));

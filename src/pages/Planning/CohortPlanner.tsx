@@ -178,6 +178,7 @@ function runQuery(rows: Row[], qRaw: string) {
   })();
 
   const scored: { r: Row; s: number }[] = [];
+  const scoreOf = new Map<Row, number>();
   for (const r of rows) {
     if (gender && r.gender !== gender && r.gender !== "Unknown Gender") continue;
     if (geo && r.geo !== geo) continue;
@@ -196,8 +197,12 @@ function runQuery(rows: Row[], qRaw: string) {
     if (isMigration && /(cash|cod|debit|atm|card|pos|bank)/.test(r.text)) s += 5;
     if (isMigration && /(upi|wallet)/.test(r.text)) s -= 8;
     if (gender || geo || ages) s += 2;
-    if (s >= 5) scored.push({ r, s });
+    if (s >= 5) {
+      scored.push({ r, s });
+      scoreOf.set(r, s);
+    }
   }
+
 
   const strong = scored.filter((x) => x.s >= 8);
   const used = strong.length >= 10 ? strong : scored;
@@ -218,13 +223,56 @@ function runQuery(rows: Row[], qRaw: string) {
   const cellFactor = (partnersCount: number) => (partnersCount > 2 ? 0.3 : 0.4);
   const premiumFactor = isPremium && !scored.some(({ r }) => PREMIUM_WORDS.some((w) => r.text.includes(w))) ? 0.35 : 1;
 
+  /* ---- query-intent skews so splits react to what the planner typed ---- */
+  const isMass = /(value|budget|mass|rural|bharat|entry level|affordable|small town)/.test(q);
+  const isYoung = /(gen z|youth|young|college|student|teen|18|22|24|gaming|ott|streaming|social|app)/.test(q);
+  const isFamily = /(family|parent|mother|father|household|kids|children|baby)/.test(q);
+  const isMature = /(senior|retire|45|50|insurance|investment|mutual fund|suv|sedan|luxury car|home loan)/.test(q);
+  const femaleTilt = /(beauty|skincare|skin care|cosmetic|makeup|salon|fragrance|personal care|jewell|saree|women|female)/.test(q);
+  const maleTilt = /(bike|motorcycle|scooter|auto|car|suv|gaming|cricket|sports|men|male|trading|shaving|grooming)/.test(q);
+
+  const geoW = (g: string) => {
+    const t = clean(g);
+    if (isPremium) return t.includes("metro") ? 1.7 : t.includes("1") ? 1.25 : t.includes("2") ? 0.65 : 0.4;
+    if (isMass) return t.includes("metro") ? 0.55 : t.includes("1") ? 0.85 : t.includes("2") ? 1.3 : 1.6;
+    if (qSector === "Travel & Hospitality" || qSector === "Digital & Apps") return t.includes("metro") ? 1.35 : t.includes("1") ? 1.1 : 0.8;
+    if (qSector === "CPG / FMCG") return t.includes("metro") ? 1.15 : t.includes("2") ? 1.1 : 0.95;
+    return 1;
+  };
+
+  const ageStart = (a: string) => {
+    const m = clean(a).match(/(\d+)/);
+    if (/less than/.test(clean(a))) return 20;
+    return m ? Number(m[1]) : 33;
+  };
+  const ageW = (a: string) => {
+    const st = ageStart(a);
+    let w = 1;
+    if (isYoung) w *= st <= 28 ? 1.8 : st <= 34 ? 1.1 : st <= 46 ? 0.55 : 0.3;
+    if (isFamily) w *= st >= 29 && st <= 46 ? 1.6 : st < 29 ? 0.6 : 0.8;
+    if (isMature) w *= st >= 41 ? 1.7 : st >= 35 ? 1.2 : 0.5;
+    if (isPremium) w *= st >= 29 && st <= 52 ? 1.25 : 0.8;
+    return w;
+  };
+
+  const genW = (gd: string) => {
+    const t = clean(gd);
+    if (femaleTilt && !maleTilt) return t.includes("female") ? 1.9 : t.includes("male") ? 0.55 : 1;
+    if (maleTilt && !femaleTilt) return t.includes("female") ? 0.55 : t.includes("male") ? 1.7 : 1;
+    return 1;
+  };
+
   const splitGeo = new Map<string, number>();
   const splitAge = new Map<string, number>();
   const splitGen = new Map<string, number>();
   let total = 0;
+  let wGeo = 0;
+  let wAge = 0;
+  let wGen = 0;
 
   for (const g of groups.values()) {
     const cells = new Map<string, Map<string, number>>();
+    const cellScore = new Map<string, number[]>();
     for (const r of g.rows) {
       const ck = `${r.geo}|${r.age}|${r.gender}`;
       let m = cells.get(ck);
@@ -233,6 +281,9 @@ function runQuery(rows: Row[], qRaw: string) {
         cells.set(ck, m);
       }
       m.set(r.partner, Math.max(m.get(r.partner) || 0, r.volume));
+      const cs = cellScore.get(ck) || [];
+      cs.push(scoreOf.get(r) || 1);
+      cellScore.set(ck, cs);
     }
     let gv = 0;
     for (const [ck, m] of cells) {
@@ -242,9 +293,18 @@ function runQuery(rows: Row[], qRaw: string) {
       v *= premiumFactor;
       gv += v;
       const [gt, ab, gd] = ck.split("|");
-      splitGeo.set(gt, (splitGeo.get(gt) || 0) + v);
-      splitAge.set(ab, (splitAge.get(ab) || 0) + v);
-      splitGen.set(gd, (splitGen.get(gd) || 0) + v);
+      const sc = cellScore.get(ck) || [1];
+      const rel = sc.reduce((a, b) => a + b, 0) / sc.length / 10;
+      const base = v * Math.max(0.2, rel);
+      const vg = base * geoW(gt);
+      const va = base * ageW(ab);
+      const vd = base * genW(gd);
+      splitGeo.set(gt, (splitGeo.get(gt) || 0) + vg);
+      splitAge.set(ab, (splitAge.get(ab) || 0) + va);
+      splitGen.set(gd, (splitGen.get(gd) || 0) + vd);
+      wGeo += vg;
+      wAge += va;
+      wGen += vd;
     }
     g.volume = gv;
     total += gv;
@@ -255,10 +315,11 @@ function runQuery(rows: Row[], qRaw: string) {
   list.forEach((g) => g.partners.forEach((p) => partners.add(p)));
   const confidence = strong.length > 200 && partners.size >= 3 ? "High" : strong.length > 30 || partners.size >= 2 ? "Medium" : "Low";
 
-  const toSplit = (m: Map<string, number>) =>
+  const toSplit = (m: Map<string, number>, w: number) =>
     Array.from(m.entries())
       .sort((a, b) => b[1] - a[1])
-      .map(([k, v]) => ({ label: k, value: v, pct: total ? (v / total) * 100 : 0 }));
+      .map(([k, v]) => ({ label: k, value: w ? (v / w) * total : 0, pct: w ? (v / w) * 100 : 0 }));
+
 
   return {
     title: qRaw.trim().replace(/\b\w/g, (c) => c.toUpperCase()),
@@ -267,9 +328,9 @@ function runQuery(rows: Row[], qRaw: string) {
     groups: list.slice(0, 8),
     allGroups: list,
     partners: Array.from(partners),
-    geo: toSplit(splitGeo),
-    age: toSplit(splitAge),
-    gender: toSplit(splitGen),
+    geo: toSplit(splitGeo, wGeo),
+    age: toSplit(splitAge, wAge),
+    gender: toSplit(splitGen, wGen),
     isPremium,
     isMigration,
   };

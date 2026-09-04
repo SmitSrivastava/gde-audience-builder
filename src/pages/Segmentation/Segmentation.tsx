@@ -63,6 +63,7 @@ const AudienceList = () => {
 
   return (
     <div className="space-y-6">
+      <PartnerStrip />
       <div className="bg-card rounded-xl neon-border">
         <div className="p-6 border-b border-border">
           <h2 className="text-xl font-semibold text-foreground">Your Audiences</h2>

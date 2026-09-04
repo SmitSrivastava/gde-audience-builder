@@ -180,15 +180,18 @@ const CreateAudience = () => {
     setQueryRules(queryRules.map(r => r.id === id ? { ...r, ...updates } : r));
   };
 
-  const handleRunQuery = () => {
+  const handleRunQuery = (rules: QueryRule[] = queryRules) => {
     setIsRunning(true);
     setQueryRun(false);
     // Simulate different size based on conditions
-    const hasProfession = queryRules.some(r => r.field === 'Profession' && r.value);
-    const hasAge = queryRules.some(r => r.field === 'Age' && r.value);
+    const hasProfession = rules.some(r => r.field === 'Profession' && r.value);
+    const hasAge = rules.some(r => r.field === 'Age' && r.value);
     let size = matchedAudience?.sizeNum || 14200000;
     if (hasProfession) size = Math.round(size * 0.6);
     if (hasAge) size = Math.round(size * 0.95);
+    // Each additional filled rule narrows the cohort
+    const extraRules = rules.filter(r => r.field && r.value && r.field !== 'Profession' && r.field !== 'Age').length;
+    size = Math.round(size * Math.pow(0.8, extraRules));
     const sizeM = (size / 1000000).toFixed(1);
     setTimeout(() => {
       setIsRunning(false);
@@ -196,6 +199,38 @@ const CreateAudience = () => {
       setResultSize(`${sizeM}M`);
       setResultSizeNum(size);
     }, 2500);
+  };
+
+  const handleInterpret = async () => {
+    if (!nlPrompt.trim()) return;
+    setIsInterpreting(true);
+    setAiSummary('');
+    try {
+      const { data, error } = await supabase.functions.invoke('interpret-cohort', {
+        body: { prompt: nlPrompt.trim() },
+      });
+      if (error) {
+        const msg = (data as { error?: string } | null)?.error || error.message || 'AI interpretation failed';
+        throw new Error(msg);
+      }
+      const result = data as { rules: { field: string; operator: string; value: string; logic: 'AND' | 'OR' }[]; summary: string };
+      const rules: QueryRule[] = result.rules.map((r, i) => ({
+        id: String(Date.now() + i),
+        field: r.field,
+        operator: r.operator,
+        value: r.value,
+        logic: r.logic,
+      }));
+      setQueryRules(rules);
+      setAiSummary(result.summary);
+      toast({ title: 'Cohort interpreted', description: result.summary });
+      // Auto-run the query to estimate cohort size
+      handleRunQuery(rules);
+    } catch (e) {
+      toast({ title: 'Could not interpret', description: e instanceof Error ? e.message : 'Try rephrasing your description.', variant: 'destructive' });
+    } finally {
+      setIsInterpreting(false);
+    }
   };
 
   const handleCreateAudience = async () => {
@@ -288,7 +323,7 @@ const CreateAudience = () => {
                 )}
                 <select value={rule.field} onChange={(e) => updateQueryRule(rule.id, { field: e.target.value, value: '' })} className="px-3 py-2 bg-card border border-border rounded-lg text-sm text-foreground min-w-[180px]">
                   <option value="">Select field...</option>
-                  {ALL_FIELDS.map(f => <option key={f} value={f}>{f}</option>)}
+                  {fieldOptions.map(f => <option key={f} value={f}>{f}</option>)}
                 </select>
                 {rule.field && (
                   <select value={rule.operator} onChange={(e) => updateQueryRule(rule.id, { operator: e.target.value })} className="px-3 py-2 bg-card border border-border rounded-lg text-sm text-foreground">

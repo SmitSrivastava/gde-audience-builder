@@ -1,10 +1,57 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Routes, Route, NavLink, useNavigate } from 'react-router-dom';
-import { Plus, List, Edit } from 'lucide-react';
+import { Plus, List, Edit, Database, Sparkles } from 'lucide-react';
 import { allAudiences, demoAudienceIds } from '@/data/audiences';
 import { useSavedAudiences } from '@/contexts/SavedAudiencesContext';
+import { getBundledRows, datasetStats, fmt } from '@/lib/planningEngine';
 import CreateAudience from './CreateAudience';
+
+const PartnerStrip = () => {
+  const stats = useMemo(() => datasetStats(getBundledRows()), []);
+  return (
+    <div className="bg-card rounded-2xl neon-border overflow-hidden">
+      <div className="p-6 border-b border-border flex items-center gap-3">
+        <Database className="text-primary" size={22} />
+        <div>
+          <h2 className="text-xl font-semibold text-foreground">Onboarded Data Partners</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {stats.partners} partners · {stats.signals.toLocaleString()} audience signals · {fmt(stats.vol)} addressable planning universe
+          </p>
+        </div>
+      </div>
+      <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {stats.partnerList.map((p, i) => (
+          <div
+            key={p.name}
+            className="group relative overflow-hidden rounded-xl border border-border bg-secondary/20 p-4 transition-all duration-300 hover:-translate-y-1 hover:border-primary/50 hover:shadow-[0_0_25px_hsl(var(--primary)/0.18)]"
+          >
+            <div className="absolute -right-8 -top-8 h-20 w-20 rounded-full bg-primary/10 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="relative flex items-start justify-between gap-2">
+              <div>
+                <div className="font-semibold text-foreground">{p.name}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{p.signals.toLocaleString()} signals</div>
+              </div>
+              <span className="shrink-0 rounded-full bg-primary/15 border border-primary/30 px-2 py-0.5 text-[10px] font-bold text-primary">
+                #{i + 1}
+              </span>
+            </div>
+            <div className="relative mt-4 flex items-end justify-between">
+              <div className="text-2xl font-bold text-foreground">{fmt(p.volume)}</div>
+              <Sparkles size={16} className="text-primary/60" />
+            </div>
+            <div className="relative mt-3 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-primary to-primary/40"
+                style={{ width: `${Math.max(6, (p.volume / (stats.partnerList[0]?.volume || 1)) * 100)}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 const AudienceList = () => {
   const navigate = useNavigate();

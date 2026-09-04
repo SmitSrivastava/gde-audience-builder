@@ -389,7 +389,7 @@ const CreateAudience = () => {
         <div className="bg-card rounded-xl p-6 neon-border">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-foreground">Run Query</h3>
-            <button onClick={handleRunQuery} disabled={isRunning}
+            <button onClick={() => handleRunQuery()} disabled={isRunning}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${isRunning ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary hover:bg-primary/90 text-primary-foreground'}`}>
               <Play size={16} /> {isRunning ? 'Running...' : 'Run Query'}
             </button>

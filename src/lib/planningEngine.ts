@@ -11,6 +11,9 @@ export type Row = {
   age: number[];
   gender: number[];
   text: string;
+  sigText: string;
+  catText: string;
+
   sector: string;
   layer: string;
   key: string;

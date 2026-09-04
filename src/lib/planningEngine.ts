@@ -333,45 +333,59 @@ function evalBlock(rows: Row[], block: Block, extraModifiers: string[] = [], ext
   const modifiers = Array.from(new Set([...block.modifiers, ...extraModifiers]));
   const filters = { ...extraFilters, ...block.filters };
   const isPremium = modifiers.some((m) => PREMIUM_WORDS.includes(m) || /premium|affluent|luxury|high value/.test(m));
+  const specific = !block.core_category.startsWith("__free:");
 
-  const eligible: { r: Row; score: number; hasMod: boolean }[] = [];
+  // anchor eligibility: a row qualifies only when a core-category keyword hits its signal / category / sub-category
+  const scored: { r: Row; score: number; hasMod: boolean }[] = [];
   for (const r of rows) {
-    let s = 0;
+    let anchor = 0;
     for (const k of kws) {
-      if (r.text.includes(k)) s += k.length > 5 ? 3 : 2;
+      if (hasKw(r.sigText, k)) anchor = Math.max(anchor, 5);
+      else if (hasKw(r.catText, k)) anchor = Math.max(anchor, 4);
     }
-    if (s === 0) continue;
-    if (sector !== "Cross-Sector" && r.sector === sector) s += 3;
-    if (block.intent && r.text.includes(block.intent)) s += 2;
-    const hasMod = PREMIUM_WORDS.some((w) => r.text.includes(w));
-    if (isPremium && hasMod) s += 4;
-    eligible.push({ r, score: s, hasMod });
+    if (!anchor) continue;
+    let s = anchor;
+    if (sector !== "Cross-Sector" && r.sector === sector) s += 6;
+    if (block.intent && hasKw(r.sigText, block.intent)) s += 3;
+    const hasMod = PREMIUM_WORDS.some((w) => hasKw(r.text, w));
+    if (isPremium && hasMod) s += 3;
+    if (filters.geo_tier || filters.age_bucket || filters.gender) s += 2;
+    scored.push({ r, score: s, hasMod });
+  }
+
+  let threshold = specific ? 8 : 5;
+  let eligible = scored.filter((e) => e.score >= threshold);
+  while (eligible.length < 10 && threshold > 4) {
+    threshold -= 1;
+    eligible = scored.filter((e) => e.score >= threshold);
   }
   if (!eligible.length) return { total: 0, rows: [], sector, core: block.core_category };
 
-  let selected = eligible;
+  let selected: { r: Row; score: number; hasMod: boolean; weight?: number }[] = eligible;
   let narrowing = 1;
   if (isPremium) {
     const mod = eligible.filter((e) => e.hasMod);
+    const affluence = eligible.filter((e) => !e.hasMod && e.r.layer === "Affluence");
     if (mod.length) {
-      const broad = eligible.filter((e) => !e.hasMod).map((e) => ({ ...e, weight: 0.2 }));
-      selected = [...mod.map((e) => ({ ...e, weight: 1 })), ...broad] as any;
-    } else {
+      selected = [...mod.map((e) => ({ ...e, weight: 1 })), ...eligible.filter((e) => !e.hasMod).map((e) => ({ ...e, weight: 0.2 }))];
+    } else if (affluence.length) {
       narrowing = 0.35;
+    } else {
+      narrowing = 0.2;
     }
   }
 
   const out: { r: Row; v: number; score: number }[] = [];
   let total = 0;
-  // group rows by cohort key to apply duplicate/partner contribution rules
+  // group rows by cohort meaning to apply duplicate/partner contribution rules
   const groups = new Map<string, { r: Row; score: number; weight: number }[]>();
-  for (const e of selected as any[]) {
+  for (const e of selected) {
     const arr = groups.get(e.r.key) || [];
     arr.push({ r: e.r, score: e.score, weight: e.weight ?? 1 });
     groups.set(e.r.key, arr);
   }
   for (const arr of groups.values()) {
-    // max per partner
+    // same partner duplicates → keep the largest
     const byPartner = new Map<string, { r: Row; score: number; weight: number }>();
     for (const e of arr) {
       const prev = byPartner.get(e.r.partner);
@@ -392,6 +406,7 @@ function evalBlock(rows: Row[], block: Block, extraModifiers: string[] = [], ext
   }
   return { total, rows: out, sector, core: block.core_category };
 }
+
 
 const sectorOf = (core: string) => (core.startsWith("__free:") ? "Cross-Sector" : CORE_CATEGORIES[core]?.sector || "Cross-Sector");
 

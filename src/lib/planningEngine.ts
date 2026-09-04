@@ -174,12 +174,14 @@ function coreOf(text: string) {
 
 function buildRow(partner: string, category: string, sub: string, signal: string, volume: number, geo: number[], age: number[], gender: number[]): Row {
   const text = clean(`${partner} ${category} ${sub} ${signal}`);
-  const sector = classify(SECTORS, text, "Cross-Sector");
-  const layer = classify(LAYERS, text, "Cross-Sector Consumer Signals");
-  const core = coreOf(text);
+  const sigText = clean(signal);
+  const catText = clean(`${category} ${sub}`);
+  const sector = classify(SECTORS, `${sigText} ${catText}`, "Cross-Sector");
+  const layer = classify(LAYERS, `${sigText} ${catText}`, "Cross-Sector Consumer Signals");
+  const core = coreOf(`${sigText} ${catText}`);
   const normalized = core ? CORE_CATEGORIES[core].normalized : "cross_sector";
   const cleanedSignal = tokens(signal).slice(0, 5).sort().join("_");
-  return { partner, category, sub, signal, volume, geo, age, gender, text, sector, layer, key: `${normalized}|${sector}|${layer}|${cleanedSignal}` };
+  return { partner, category, sub, signal, volume, geo, age, gender, text, sigText, catText, sector, layer, key: `${normalized}|${sector}|${layer}|${cleanedSignal}` };
 }
 
 /* ===================== dataset ===================== */

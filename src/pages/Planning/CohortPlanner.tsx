@@ -560,9 +560,9 @@ export default function CohortPlanner() {
                 {payload && (
                   <div className="mt-5 space-y-3 rounded-2xl border border-slate-200 p-4">
                     <div className="text-sm font-semibold text-slate-700">Narrow this audience {planning && <span className="text-xs font-normal text-indigo-500">· updating…</span>}</div>
-                    <FilterPills label="Geo tier" options={GEOS} selected={filters.geo_tier} onChange={(v) => applyFilters({ ...filters, geo_tier: v })} />
-                    <FilterPills label="Age band" options={AGES} selected={filters.age_bucket} onChange={(v) => applyFilters({ ...filters, age_bucket: v })} />
-                    <FilterPills label="Gender" options={GENDERS} selected={filters.gender_bucket} onChange={(v) => applyFilters({ ...filters, gender_bucket: v })} />
+                    <FilterPills label="Geo tier" options={GEO_OPTS} selected={filters.geo_tier} onChange={(v) => applyFilters({ ...filters, geo_tier: v })} />
+                    <FilterPills label="Age band" options={AGE_OPTS} selected={filters.age_bucket} onChange={(v) => applyFilters({ ...filters, age_bucket: v })} />
+                    <FilterPills label="Gender" options={GENDER_OPTS} selected={filters.gender_bucket} onChange={(v) => applyFilters({ ...filters, gender_bucket: v })} />
                   </div>
                 )}
 

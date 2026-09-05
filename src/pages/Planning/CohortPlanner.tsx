@@ -217,7 +217,18 @@ export default function CohortPlanner() {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<PlanResult | null>(null);
   const [expr, setExpr] = useState<Expression>(() => newGroup());
+  const [planning, setPlanning] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [chips, setChips] = useState<string[]>(EXAMPLES);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    supabase.from("seed_chip").select("chip_label").then(({ data }) => {
+      const labels = (data || []).map((c: any) => c.chip_label).filter(Boolean);
+      if (labels.length) setChips(labels);
+    });
+  }, []);
+
 
   useEffect(() => {
     try {

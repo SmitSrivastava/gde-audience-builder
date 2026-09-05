@@ -209,7 +209,34 @@ function ExpressionEditor({ node, onChange, onRemove, depth = 0 }: { node: Expre
   );
 }
 
+type Filters = { geo_tier: string[]; age_bucket: string[]; gender_bucket: string[] };
+
+const FilterPills = ({
+  label, options, selected, onChange,
+}: { label: string; options: string[]; selected: string[]; onChange: (v: string[]) => void }) => (
+  <div>
+    <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((o) => {
+        const on = selected.includes(o);
+        return (
+          <button
+            key={o}
+            onClick={() => onChange(on ? selected.filter((x) => x !== o) : [...selected, o])}
+            className={`rounded-full px-3 py-1 text-[11px] font-medium transition ${
+              on ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow" : "border border-slate-200 bg-white text-slate-600 hover:border-indigo-300"
+            }`}
+          >
+            {o}
+          </button>
+        );
+      })}
+    </div>
+  </div>
+);
+
 /* ---------------- page ---------------- */
+
 export default function CohortPlanner() {
   const [rows, setRows] = useState<Row[]>(() => getBundledRows());
   const [loading, setLoading] = useState(false);

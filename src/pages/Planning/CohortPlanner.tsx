@@ -32,6 +32,7 @@ function toPlanResult(brief: string, d: any): PlanResult {
     label: m.audience_signal,
     sector: m.sector || "—",
     layer: m.layer || "—",
+    klass: m.klass || "Intent",
     partners: [m.partner_sources].filter(Boolean),
     volume: Number(m.scale) || 0,
   }));
@@ -48,11 +49,10 @@ function toPlanResult(brief: string, d: any): PlanResult {
     age: bars(d.age_split, "age_bucket"),
     gender: bars(d.gender_split, "gender_bucket"),
     partners: d.partners || [],
-    notes: `Join ${hb.join || "OR"} across ${(hb.anchors || []).join(", ") || "matched families"}${
-      (hb.modifiers || []).length ? ` with modifiers ${(hb.modifiers || []).map((m: any) => m.token).join(", ")}` : ""
-    }. People reach is de-duplicated across partners using stored overlap rules, capped by India population ceilings. Rules applied: ${(hb.rules || []).join(" · ")}.`,
+    notes: `Read as ${d.base_cohort || brief}. People are de-duplicated: phone and device of the same partner count once, and overlap between partners uses stored overlap rules before the India population ceiling is applied. ${(hb.rules || []).join(" · ")}.`,
   } as PlanResult;
 }
+
 
 
 const Bars = ({ title, data }: { title: string; data: { label: string; value: number; pct: number }[] }) => (
@@ -209,14 +209,49 @@ function ExpressionEditor({ node, onChange, onRemove, depth = 0 }: { node: Expre
   );
 }
 
+type Filters = { geo_tier: string[]; age_bucket: string[]; gender_bucket: string[] };
+
+const GEO_OPTS = ["Metro", "Tier 1", "Tier 2", "Tier 3"];
+const AGE_OPTS = ["Less than 22", "23-28", "29-34", "35-40", "41-46", "47+"];
+const GENDER_OPTS = ["Female", "Male", "Others"];
+
+
+const FilterPills = ({
+  label, options, selected, onChange,
+}: { label: string; options: string[]; selected: string[]; onChange: (v: string[]) => void }) => (
+  <div>
+    <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((o) => {
+        const on = selected.includes(o);
+        return (
+          <button
+            key={o}
+            onClick={() => onChange(on ? selected.filter((x) => x !== o) : [...selected, o])}
+            className={`rounded-full px-3 py-1 text-[11px] font-medium transition ${
+              on ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow" : "border border-slate-200 bg-white text-slate-600 hover:border-indigo-300"
+            }`}
+          >
+            {o}
+          </button>
+        );
+      })}
+    </div>
+  </div>
+);
+
 /* ---------------- page ---------------- */
+
 export default function CohortPlanner() {
   const [rows, setRows] = useState<Row[]>(() => getBundledRows());
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"search" | "build">("search");
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<PlanResult | null>(null);
+  const [payload, setPayload] = useState<any>(null);
+  const [filters, setFilters] = useState<Filters>({ geo_tier: [], age_bucket: [], gender_bucket: [] });
   const [expr, setExpr] = useState<Expression>(() => newGroup());
+
   const [planning, setPlanning] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
   const [chips, setChips] = useState<string[]>(EXAMPLES);
@@ -287,23 +322,49 @@ export default function CohortPlanner() {
     setQuery(q);
     setPlanning(true);
     setPlanError(null);
+    setFilters({ geo_tier: [], age_bucket: [], gender_bucket: [] });
     try {
       const { data, error } = await supabase.functions.invoke("plan-audience", { body: { brief: q } });
       if (error) throw error;
       if (data?.refuse?.flag) {
         setResult(null);
+        setPayload(null);
         setPlanError(data.refuse.reason || "No known audience family found in this brief.");
         return;
       }
+      setPayload(data);
       setResult(toPlanResult(q, data));
     } catch (e) {
       console.error("plan-audience failed", e);
       setResult(runSearch(rows, q));
+      setPayload(null);
       setPlanError("Live planning engine unavailable — showing local estimate.");
     } finally {
       setPlanning(false);
     }
   };
+
+  /* Re-slice the same reading of the brief with the page filters. No re-parse. */
+  const applyFilters = async (next: Filters) => {
+    setFilters(next);
+    if (!payload?.query_ir) return;
+    setPlanning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("plan-audience", {
+        body: { query_ir: payload.query_ir, filters: next },
+      });
+      if (error) throw error;
+      if (!data?.refuse?.flag) {
+        setPayload(data);
+        setResult(toPlanResult(query, data));
+      }
+    } catch (e) {
+      console.error("filter slice failed", e);
+    } finally {
+      setPlanning(false);
+    }
+  };
+
 
 
   const build = () => {
@@ -453,6 +514,7 @@ export default function CohortPlanner() {
                     <div className="text-xs uppercase tracking-wide text-slate-400">Available audience scale</div>
                     <div className="mt-1 text-2xl font-bold">{result.title}</div>
                     <div className="mt-3 bg-gradient-to-r from-indigo-600 to-cyan-500 bg-clip-text text-6xl font-extrabold text-transparent">{fmt(result.total)}</div>
+                    <div className="mt-1 text-xs text-slate-500">Real people, de-duplicated across partners</div>
                   </div>
                   <span
                     className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -463,12 +525,54 @@ export default function CohortPlanner() {
                   </span>
                 </div>
 
+                {payload && (
+                  <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Base cohort</div>
+                      <div className="mt-1 text-sm font-semibold text-slate-800">{payload.base_cohort}</div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Modifier</div>
+                      <div className="mt-1 text-sm font-semibold text-slate-800">{payload.modifier_line}</div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Dimensions</div>
+                      <div className="mt-1 text-sm font-semibold text-slate-800">{payload.dimension_line}</div>
+                    </div>
+                  </div>
+                )}
+
+                {payload && (
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-500">Purchase-backed people</div>
+                      <div className="mt-1 text-2xl font-bold text-slate-900">{fmt(Number(payload.actual_people) || 0)}</div>
+                      <div className="mt-1 text-xs text-slate-500">Seen buying or transacting</div>
+                    </div>
+                    <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-violet-500">Interest-backed people</div>
+                      <div className="mt-1 text-2xl font-bold text-slate-900">{fmt(Number(payload.intent_people) || 0)}</div>
+                      <div className="mt-1 text-xs text-slate-500">Showing interest or affinity</div>
+                    </div>
+                  </div>
+                )}
+
+                {payload && (
+                  <div className="mt-5 space-y-3 rounded-2xl border border-slate-200 p-4">
+                    <div className="text-sm font-semibold text-slate-700">Narrow this audience {planning && <span className="text-xs font-normal text-indigo-500">· updating…</span>}</div>
+                    <FilterPills label="Geo tier" options={GEO_OPTS} selected={filters.geo_tier} onChange={(v) => applyFilters({ ...filters, geo_tier: v })} />
+                    <FilterPills label="Age band" options={AGE_OPTS} selected={filters.age_bucket} onChange={(v) => applyFilters({ ...filters, age_bucket: v })} />
+                    <FilterPills label="Gender" options={GENDER_OPTS} selected={filters.gender_bucket} onChange={(v) => applyFilters({ ...filters, gender_bucket: v })} />
+                  </div>
+                )}
+
                 <div className="mt-7 text-sm font-semibold text-slate-700">Matched Audience Signals</div>
                 <div className="mt-3 overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead>
                       <tr className="text-xs uppercase tracking-wide text-slate-400">
                         <th className="pb-2">Audience Signal</th>
+                        <th className="pb-2">Type</th>
                         <th className="pb-2">Sector</th>
                         <th className="pb-2">Layer</th>
                         <th className="pb-2">Partner Sources</th>
@@ -479,6 +583,13 @@ export default function CohortPlanner() {
                       {result.groups.map((g) => (
                         <tr key={g.key} className="hover:bg-slate-50">
                           <td className="max-w-[260px] truncate py-3 font-medium text-slate-800">{g.label}</td>
+                          <td className="py-3">
+                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              (g as any).klass === "Actual" ? "bg-indigo-50 text-indigo-700" : "bg-violet-50 text-violet-700"
+                            }`}>
+                              {(g as any).klass === "Actual" ? "Purchase" : "Interest"}
+                            </span>
+                          </td>
                           <td className="py-3 text-slate-600">{g.sector}</td>
                           <td className="py-3 text-slate-600">{g.layer}</td>
                           <td className="py-3 text-slate-600">{g.partners.join(", ")}</td>
@@ -487,7 +598,7 @@ export default function CohortPlanner() {
                       ))}
                       {!result.groups.length && (
                         <tr>
-                          <td colSpan={5} className="py-6 text-center text-slate-500">
+                          <td colSpan={6} className="py-6 text-center text-slate-500">
                             No matching audience signals found. Try a broader cohort description.
                           </td>
                         </tr>
@@ -496,22 +607,28 @@ export default function CohortPlanner() {
                   </table>
                 </div>
 
-                {result.allGroups.length > 0 && (
+                {(payload?.primary_audience || result.allGroups.length > 0) && (
                   <div className="mt-7 grid grid-cols-1 gap-4 md:grid-cols-3">
                     {[
-                      { t: "Primary Audience", g: result.allGroups[0], d: "Strongest matched audience" },
-                      { t: "Expansion Audience", g: result.allGroups[1] || result.allGroups[0], d: "Related high-scale audience" },
-                      { t: "Precision Audience", g: result.allGroups[result.allGroups.length - 1], d: "Smaller, higher-confidence audience" },
-                    ].map((c) => (
-                      <div key={c.t} className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-indigo-600">{c.t}</div>
-                        <div className="mt-1 truncate text-sm font-medium text-slate-800">{c.g.label}</div>
-                        <div className="mt-2 text-2xl font-bold">{fmt(c.g.volume)}</div>
-                        <div className="mt-1 text-xs text-slate-500">{c.d}</div>
-                      </div>
-                    ))}
+                      { t: "Primary Audience", c: payload?.primary_audience, g: result.allGroups[0], d: "Strongest matched audience" },
+                      { t: "Expansion Audience", c: payload?.expansion_audience, g: result.allGroups[1] || result.allGroups[0], d: "Related high-scale audience" },
+                      { t: "Precision Audience", c: payload?.precision_audience, g: result.allGroups[result.allGroups.length - 1], d: "Smaller, higher-confidence audience" },
+                    ].map((x) => {
+                      const label = x.c?.audience_signal || x.g?.label || "—";
+                      const vol = Number(x.c?.scale ?? x.g?.volume ?? 0);
+                      const src = x.c?.partner_sources || x.g?.partners?.join(", ") || "";
+                      return (
+                        <div key={x.t} className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-indigo-600">{x.t}</div>
+                          <div className="mt-1 truncate text-sm font-medium text-slate-800">{label}</div>
+                          <div className="mt-2 text-2xl font-bold">{fmt(vol)}</div>
+                          <div className="mt-1 text-xs text-slate-500">{src || x.d}</div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
+
               </div>
 
               <div className="space-y-6 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">

@@ -23,21 +23,38 @@ async function sha256(s: string): Promise<string> {
 
 const SYSTEM = `You are the QueryIR compiler for WPP GDE Audience Intelligence (India).
 You do NOT estimate audience size. You do NOT pick overlap percentages. You do NOT pick partners.
+You do NOT pick catalog rows and you do NOT output synonym lists beyond obvious spelling variants.
 Emit JSON only that matches the schema.
 
 HARD RULES
-H1. Anchors are product/category nouns. "premium skincare and are likely to travel internationally" has TWO anchors: skincare (beauty, role=primary) AND international travel (travel, role=and). join=AND.
-H2. premium/luxury/heavy/organic/budget/affluent/hni/international are modifiers (operators), never anchors, unless the whole query is just that word.
-H3. female/women/male/young/millennial/metro/urban/bharat/tier 1/2/3 are DIMENSIONS, never modifiers.
-H4. "and" / "plus" / "who also" → join=AND. "or" / "either" → join=OR. Default OR only when a single noun.
-H5. Unknown family → refuse.flag=true. Do not guess "other".
+H1. Anchors are product / category / platform nouns. Every product noun is its own anchor. Give each anchor an id: a1, a2, a3 in order.
+H2. premium / luxury / affordable / heavy / organic / budget / affluent / hni are MODIFIERS, never anchors.
+H3. female / male / young / metro / urban / bharat / tier 1-3 / above 25 / city names are DIMENSIONS, never modifiers, never anchors.
+H4. "and" / "plus" / "who also" / "along with" → join=AND. "or" / "either" → join=OR. Single anchor → join=OR.
+H5. A modifier attaches ONLY to the anchor it grammatically modifies, via applies_to = [anchor id].
+    "premium skincare and beauty user" → premium applies_to ["a1"] (skincare) only, NOT beauty.
+    "premium skincare and premium beauty" → two modifier objects, one per anchor.
+    Ambiguous ("premium users who buy skincare and beauty") → attach to the primary anchor id only.
 H6. above 25 → dimensions.above_age=25 and age_bucket=["23-28","29-34","35-40","41-46","47+"].
 H7. City names go to dimensions.city; do not also fill geo_tier unless the user said Metro/Tier.
-H8. mode="expected". Typo repair is allowed (choclate→chocolate). Inventing a family is not.
-H9. NEVER output a number, partner name (unless user named it), or volume.
+H8. mode="expected". Typo repair allowed (choclate→chocolate, quickcommerce→quick commerce). Inventing a family is not.
+H9. NEVER output a number, volume or partner name (unless the user named it).
+H10. If the brief contains "and" plus two product nouns you MUST emit two anchors. Never collapse to one.
+
+FEW-SHOTS
+"premium skincare and beauty user" →
+ join AND; anchors a1 canonical "skincare" family beauty role primary tokens ["skincare","skin care"], a2 canonical "beauty" family beauty role and tokens ["beauty"];
+ modifiers [{token:"premium", op:"PREFER_ROW_ELSE_SCALE", param:0.12, applies_to:["a1"]}]; dimensions empty.
+"premium skincare and are likely to travel internationally" →
+ join AND; anchors a1 "skincare" (beauty, primary), a2 "international travel" (travel, and); modifier premium applies_to ["a1"]. Never drop skincare.
+"quickcommerce user" → one anchor a1 canonical "quick commerce" family grocery_retail, tokens ["quick commerce","qcommerce","q-commerce","instant delivery"]; no modifier; no dimension; join OR.
+"snack shopper" → one anchor a1 canonical "snacks" family snacks; join OR.
+"quick commerce snack buyer" → join AND; a1 "quick commerce" (grocery_retail, primary), a2 "snacks" (snacks, and); no modifier.
+"premium chocolate female above 25" → one anchor a1 "chocolate" family sweets; modifier premium applies_to ["a1"]; dimensions gender_bucket ["Female"], above_age 25.
 
 KNOWN FAMILIES
 sweets, ice_cream, bakery, snacks, biscuits, beverages_cold, beverages_hot, dairy, staples, fruits_veg, meat, packaged_food, baby, pet, beauty, personal_care, pharma, fitness, apparel, jewellery, electronics, appliances, home, auto, education, payments, grocery_retail, dining, travel, entertainment, finance, real_estate, agri, construction, industrial, toys, stationery, sexual_wellness, paan, luxury, fuel, utility`;
+
 
 function responseSchema() {
   return {
@@ -49,13 +66,14 @@ function responseSchema() {
         items: {
           type: "OBJECT",
           properties: {
+            id: { type: "STRING" },
             canonical: { type: "STRING" },
             family: { type: "STRING" },
             role: { type: "STRING", enum: ["primary", "and", "or"] },
             tokens: { type: "ARRAY", items: { type: "STRING" } },
             confidence: { type: "NUMBER" },
           },
-          required: ["canonical", "family", "role", "tokens"],
+          required: ["id", "canonical", "family", "role", "tokens"],
         },
       },
       modifiers: {
@@ -66,10 +84,12 @@ function responseSchema() {
             token: { type: "STRING" },
             op: { type: "STRING" },
             param: { type: "NUMBER" },
+            applies_to: { type: "ARRAY", items: { type: "STRING" } },
           },
-          required: ["token", "op"],
+          required: ["token", "op", "applies_to"],
         },
       },
+
       dimensions: {
         type: "OBJECT",
         properties: {
@@ -117,7 +137,6 @@ async function accessToken(sa: Record<string, string>): Promise<string> {
 function canonicalize(ir: any) {
   ir.join = ir.join === "AND" ? "AND" : "OR";
   ir.mode = ir.mode || "expected";
-  ir.modifiers = ir.modifiers || [];
   ir.dimensions = ir.dimensions || {};
   ir.dimensions.geo_tier = ir.dimensions.geo_tier || [];
   ir.dimensions.age_bucket = ir.dimensions.age_bucket || [];
@@ -125,16 +144,65 @@ function canonicalize(ir: any) {
   ir.dimensions.city = ir.dimensions.city ?? null;
   ir.dimensions.above_age = ir.dimensions.above_age ?? null;
   ir.refuse = ir.refuse || { flag: false, reason: null };
-  ir.anchors = (ir.anchors || []).map((a: any) => ({
-    canonical: String(a.canonical || "").toLowerCase(),
-    family: String(a.family || "").toLowerCase(),
-    role: a.role || "primary",
-    tokens: (a.tokens || []).map((t: string) => String(t).toLowerCase()).sort(),
+
+  // Primary first, then declaration order. Ids are re-stamped a1..aN and modifiers remapped.
+  const src = (ir.anchors || []).map((a: any, i: number) => ({
+    oldId: String(a.id || `a${i + 1}`),
+    canonical: String(a.canonical || "").toLowerCase().trim(),
+    family: String(a.family || "").toLowerCase().trim(),
+    role: a.role || (i === 0 ? "primary" : "and"),
+    tokens: [...new Set((a.tokens || []).map((t: string) => String(t).toLowerCase().trim()).filter(Boolean))],
     confidence: a.confidence ?? 0.8,
-  }));
-  ir.anchors.sort((a: any, b: any) => a.canonical.localeCompare(b.canonical));
+  })).filter((a: any) => a.canonical);
+  const ordered = [
+    ...src.filter((a: any) => a.role === "primary"),
+    ...src.filter((a: any) => a.role !== "primary"),
+  ];
+  const idMap: Record<string, string> = {};
+  ir.anchors = ordered.map((a: any, i: number) => {
+    const id = `a${i + 1}`;
+    idMap[a.oldId] = id;
+    if (!a.tokens.includes(a.canonical)) a.tokens.push(a.canonical);
+    return { id, canonical: a.canonical, family: a.family, role: i === 0 ? "primary" : (ir.join === "OR" ? "or" : "and"), tokens: a.tokens.sort(), confidence: a.confidence };
+  });
+  const primaryId = ir.anchors[0]?.id;
+  ir.modifiers = (ir.modifiers || []).map((m: any) => {
+    const at = (m.applies_to || []).map((x: string) => idMap[String(x)]).filter(Boolean);
+    return {
+      token: String(m.token || "").toLowerCase(),
+      op: m.op || "PREFER_ROW_ELSE_SCALE",
+      param: m.param ?? 0.12,
+      applies_to: at.length ? at : (primaryId ? [primaryId] : []),
+    };
+  }).filter((m: any) => m.token);
   ir.modifiers.sort((a: any, b: any) => a.token.localeCompare(b.token));
   return ir;
+}
+
+async function callVertex(token: string, brief: string, reminder?: string) {
+  const url = `https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/${LOCATION}/publishers/google/models/${MODEL}:generateContent`;
+  const body = {
+    systemInstruction: { role: "system", parts: [{ text: SYSTEM + (reminder ? `\n\nREMINDER: ${reminder}` : "") }] },
+    contents: [{ role: "user", parts: [{ text: brief }] }],
+    generationConfig: {
+      temperature: 0,
+      topP: 0,
+      candidateCount: 1,
+      maxOutputTokens: 1024,
+      responseMimeType: "application/json",
+      responseSchema: responseSchema(),
+      seed: 0,
+    },
+  };
+  const vr = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const vj = await vr.json();
+  const text = vj?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error(`vertex empty ${vr.status} ${JSON.stringify(vj).slice(0, 400)}`);
+  return canonicalize(JSON.parse(text));
 }
 
 serve(async (req) => {
@@ -163,29 +231,21 @@ serve(async (req) => {
     }
     const sa = JSON.parse(raw);
     const token = await accessToken(sa);
-    const url = `https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/${LOCATION}/publishers/google/models/${MODEL}:generateContent`;
-    const body = {
-      systemInstruction: { role: "system", parts: [{ text: SYSTEM }] },
-      contents: [{ role: "user", parts: [{ text: brief }] }],
-      generationConfig: {
-        temperature: 0,
-        topP: 0,
-        candidateCount: 1,
-        maxOutputTokens: 1024,
-        responseMimeType: "application/json",
-        responseSchema: responseSchema(),
-        seed: 0,
-      },
-    };
-    const vr = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const vj = await vr.json();
-    const text = vj?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error(`vertex empty ${vr.status} ${JSON.stringify(vj).slice(0, 400)}`);
-    const ir = canonicalize(JSON.parse(text));
+
+    let ir = await callVertex(token, brief);
+    const wantsAnd = /\b(and|plus|who also|along with)\b/.test(n);
+    if (wantsAnd && (ir.anchors || []).length < 2 && !ir.refuse?.flag) {
+      ir = await callVertex(
+        token,
+        brief,
+        "The brief joins two product nouns with and/plus. You MUST emit two anchors with join=AND, and attach each modifier only to the anchor it modifies.",
+      );
+      if ((ir.anchors || []).length < 2) {
+        ir.refuse = { flag: true, reason: "Could not resolve both parts of this brief. Try naming each audience separately." };
+      }
+    }
+    if (wantsAnd && (ir.anchors || []).length >= 2) ir.join = "AND";
+
     await sb.from("query_cache").upsert({
       brief_norm_hash: h,
       brief_norm: n,
@@ -195,6 +255,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ query_ir: ir, source: "vertex", cached: false }), {
       headers: { ...CORS, "Content-Type": "application/json" },
     });
+
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
   }

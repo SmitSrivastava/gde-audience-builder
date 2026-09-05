@@ -137,7 +137,6 @@ async function accessToken(sa: Record<string, string>): Promise<string> {
 function canonicalize(ir: any) {
   ir.join = ir.join === "AND" ? "AND" : "OR";
   ir.mode = ir.mode || "expected";
-  ir.modifiers = ir.modifiers || [];
   ir.dimensions = ir.dimensions || {};
   ir.dimensions.geo_tier = ir.dimensions.geo_tier || [];
   ir.dimensions.age_bucket = ir.dimensions.age_bucket || [];
@@ -145,16 +144,65 @@ function canonicalize(ir: any) {
   ir.dimensions.city = ir.dimensions.city ?? null;
   ir.dimensions.above_age = ir.dimensions.above_age ?? null;
   ir.refuse = ir.refuse || { flag: false, reason: null };
-  ir.anchors = (ir.anchors || []).map((a: any) => ({
-    canonical: String(a.canonical || "").toLowerCase(),
-    family: String(a.family || "").toLowerCase(),
-    role: a.role || "primary",
-    tokens: (a.tokens || []).map((t: string) => String(t).toLowerCase()).sort(),
+
+  // Primary first, then declaration order. Ids are re-stamped a1..aN and modifiers remapped.
+  const src = (ir.anchors || []).map((a: any, i: number) => ({
+    oldId: String(a.id || `a${i + 1}`),
+    canonical: String(a.canonical || "").toLowerCase().trim(),
+    family: String(a.family || "").toLowerCase().trim(),
+    role: a.role || (i === 0 ? "primary" : "and"),
+    tokens: [...new Set((a.tokens || []).map((t: string) => String(t).toLowerCase().trim()).filter(Boolean))],
     confidence: a.confidence ?? 0.8,
-  }));
-  ir.anchors.sort((a: any, b: any) => a.canonical.localeCompare(b.canonical));
+  })).filter((a: any) => a.canonical);
+  const ordered = [
+    ...src.filter((a: any) => a.role === "primary"),
+    ...src.filter((a: any) => a.role !== "primary"),
+  ];
+  const idMap: Record<string, string> = {};
+  ir.anchors = ordered.map((a: any, i: number) => {
+    const id = `a${i + 1}`;
+    idMap[a.oldId] = id;
+    if (!a.tokens.includes(a.canonical)) a.tokens.push(a.canonical);
+    return { id, canonical: a.canonical, family: a.family, role: i === 0 ? "primary" : (ir.join === "OR" ? "or" : "and"), tokens: a.tokens.sort(), confidence: a.confidence };
+  });
+  const primaryId = ir.anchors[0]?.id;
+  ir.modifiers = (ir.modifiers || []).map((m: any) => {
+    const at = (m.applies_to || []).map((x: string) => idMap[String(x)]).filter(Boolean);
+    return {
+      token: String(m.token || "").toLowerCase(),
+      op: m.op || "PREFER_ROW_ELSE_SCALE",
+      param: m.param ?? 0.12,
+      applies_to: at.length ? at : (primaryId ? [primaryId] : []),
+    };
+  }).filter((m: any) => m.token);
   ir.modifiers.sort((a: any, b: any) => a.token.localeCompare(b.token));
   return ir;
+}
+
+async function callVertex(token: string, brief: string, reminder?: string) {
+  const url = `https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/${LOCATION}/publishers/google/models/${MODEL}:generateContent`;
+  const body = {
+    systemInstruction: { role: "system", parts: [{ text: SYSTEM + (reminder ? `\n\nREMINDER: ${reminder}` : "") }] },
+    contents: [{ role: "user", parts: [{ text: brief }] }],
+    generationConfig: {
+      temperature: 0,
+      topP: 0,
+      candidateCount: 1,
+      maxOutputTokens: 1024,
+      responseMimeType: "application/json",
+      responseSchema: responseSchema(),
+      seed: 0,
+    },
+  };
+  const vr = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const vj = await vr.json();
+  const text = vj?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error(`vertex empty ${vr.status} ${JSON.stringify(vj).slice(0, 400)}`);
+  return canonicalize(JSON.parse(text));
 }
 
 serve(async (req) => {
@@ -183,29 +231,21 @@ serve(async (req) => {
     }
     const sa = JSON.parse(raw);
     const token = await accessToken(sa);
-    const url = `https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/${LOCATION}/publishers/google/models/${MODEL}:generateContent`;
-    const body = {
-      systemInstruction: { role: "system", parts: [{ text: SYSTEM }] },
-      contents: [{ role: "user", parts: [{ text: brief }] }],
-      generationConfig: {
-        temperature: 0,
-        topP: 0,
-        candidateCount: 1,
-        maxOutputTokens: 1024,
-        responseMimeType: "application/json",
-        responseSchema: responseSchema(),
-        seed: 0,
-      },
-    };
-    const vr = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const vj = await vr.json();
-    const text = vj?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error(`vertex empty ${vr.status} ${JSON.stringify(vj).slice(0, 400)}`);
-    const ir = canonicalize(JSON.parse(text));
+
+    let ir = await callVertex(token, brief);
+    const wantsAnd = /\b(and|plus|who also|along with)\b/.test(n);
+    if (wantsAnd && (ir.anchors || []).length < 2 && !ir.refuse?.flag) {
+      ir = await callVertex(
+        token,
+        brief,
+        "The brief joins two product nouns with and/plus. You MUST emit two anchors with join=AND, and attach each modifier only to the anchor it modifies.",
+      );
+      if ((ir.anchors || []).length < 2) {
+        ir.refuse = { flag: true, reason: "Could not resolve both parts of this brief. Try naming each audience separately." };
+      }
+    }
+    if (wantsAnd && (ir.anchors || []).length >= 2) ir.join = "AND";
+
     await sb.from("query_cache").upsert({
       brief_norm_hash: h,
       brief_norm: n,
@@ -215,6 +255,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ query_ir: ir, source: "vertex", cached: false }), {
       headers: { ...CORS, "Content-Type": "application/json" },
     });
+
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
   }

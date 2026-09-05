@@ -287,23 +287,49 @@ export default function CohortPlanner() {
     setQuery(q);
     setPlanning(true);
     setPlanError(null);
+    setFilters({ geo_tier: [], age_bucket: [], gender_bucket: [] });
     try {
       const { data, error } = await supabase.functions.invoke("plan-audience", { body: { brief: q } });
       if (error) throw error;
       if (data?.refuse?.flag) {
         setResult(null);
+        setPayload(null);
         setPlanError(data.refuse.reason || "No known audience family found in this brief.");
         return;
       }
+      setPayload(data);
       setResult(toPlanResult(q, data));
     } catch (e) {
       console.error("plan-audience failed", e);
       setResult(runSearch(rows, q));
+      setPayload(null);
       setPlanError("Live planning engine unavailable — showing local estimate.");
     } finally {
       setPlanning(false);
     }
   };
+
+  /* Re-slice the same reading of the brief with the page filters. No re-parse. */
+  const applyFilters = async (next: Filters) => {
+    setFilters(next);
+    if (!payload?.query_ir) return;
+    setPlanning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("plan-audience", {
+        body: { query_ir: payload.query_ir, filters: next },
+      });
+      if (error) throw error;
+      if (!data?.refuse?.flag) {
+        setPayload(data);
+        setResult(toPlanResult(query, data));
+      }
+    } catch (e) {
+      console.error("filter slice failed", e);
+    } finally {
+      setPlanning(false);
+    }
+  };
+
 
 
   const build = () => {

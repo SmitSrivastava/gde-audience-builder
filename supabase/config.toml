@@ -5,3 +5,10 @@ verify_jwt = false
 
 [functions.vertex-parse]
 verify_jwt = false
+
+[functions.embed-catalog]
+verify_jwt = false
+
+[functions.plan-chat]
+verify_jwt = false
+

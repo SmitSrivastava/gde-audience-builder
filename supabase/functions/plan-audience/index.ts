@@ -300,13 +300,16 @@ async function retrieve(sb: SupabaseClient, family: string, tokens: string[], pr
   let rows = (data || []).filter((r) =>
     (r.product_families || "").split(",").map((s: string) => s.trim()).includes(family)
   );
-  const blobHit = [...tokens, canonical].filter(Boolean);
-  const tokHit = rows.filter((r) => blobHit.some((t) => (r.search_blob || "").includes(t)));
+  const squash = (s: string) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const blobHit = [...tokens, canonical].filter(Boolean).map(squash);
+  const tokHit = rows.filter((r) => blobHit.some((t) => squash(r.search_blob).includes(t)));
   if (tokHit.length) rows = tokHit;
   if (prefer.length) {
-    const pref = rows.filter((r) => prefer.some((t) => (r.search_blob || "").includes(t)));
+    const p = prefer.map(squash);
+    const pref = rows.filter((r) => p.some((t) => squash(r.search_blob).includes(t)));
     if (pref.length) rows = pref; // R16
   }
+
   return rows;
 }
 

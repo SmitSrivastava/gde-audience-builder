@@ -369,17 +369,23 @@ export default function CohortPlanner() {
                     placeholder="Search for audiences like premium skincare buyers, SUV intenders, UPI migration audience…"
                     className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm outline-none focus:border-indigo-400 focus:bg-white"
                   />
-                  <button onClick={() => search(query)} className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-7 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-200 hover:opacity-95">
-                    Find Scale
+                  <button
+                    onClick={() => search(query)}
+                    disabled={planning}
+                    className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-7 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-200 hover:opacity-95 disabled:opacity-60"
+                  >
+                    {planning ? "Planning…" : "Find Scale"}
                   </button>
                 </div>
+                {planError && <div className="mt-3 rounded-xl bg-amber-50 px-4 py-2 text-sm text-amber-800">{planError}</div>}
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {EXAMPLES.map((e) => (
+                  {chips.map((e) => (
                     <button key={e} onClick={() => search(e)} className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700">
                       {e}
                     </button>
                   ))}
                 </div>
+
               </>
             ) : (
               <>

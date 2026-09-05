@@ -533,6 +533,7 @@ export type Database = {
       signal: {
         Row: {
           category: string | null
+          embedding: string | null
           layer: string | null
           master_signal_id: string
           partner_name: string
@@ -551,6 +552,7 @@ export type Database = {
           pct_tier3: number | null
           pii: string
           pii_raw: string | null
+          platform_tags: string | null
           product_families: string | null
           reliability: number
           row_role: string | null
@@ -563,6 +565,7 @@ export type Database = {
         }
         Insert: {
           category?: string | null
+          embedding?: string | null
           layer?: string | null
           master_signal_id: string
           partner_name: string
@@ -581,6 +584,7 @@ export type Database = {
           pct_tier3?: number | null
           pii: string
           pii_raw?: string | null
+          platform_tags?: string | null
           product_families?: string | null
           reliability?: number
           row_role?: string | null
@@ -593,6 +597,7 @@ export type Database = {
         }
         Update: {
           category?: string | null
+          embedding?: string | null
           layer?: string | null
           master_signal_id?: string
           partner_name?: string
@@ -611,6 +616,7 @@ export type Database = {
           pct_tier3?: number | null
           pii?: string
           pii_raw?: string | null
+          platform_tags?: string | null
           product_families?: string | null
           reliability?: number
           row_role?: string | null
@@ -691,6 +697,29 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      match_signals: {
+        Args: {
+          match_count?: number
+          min_sim?: number
+          query_embedding: string
+        }
+        Returns: {
+          category: string
+          layer: string
+          master_signal_id: string
+          partner_name: string
+          pii: string
+          platform_tags: string
+          product_families: string
+          reliability: number
+          row_role: string
+          sector: string
+          signal: string
+          sim: number
+          sub_category: string
+          volume: number
+        }[]
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       slice_signals: {

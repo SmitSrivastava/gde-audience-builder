@@ -242,7 +242,19 @@ export default function CohortPlanner() {
     }
   }, []);
 
+  const [liveStats, setLiveStats] = useState<{ signals: number; partners: number } | null>(null);
+  useEffect(() => {
+    (async () => {
+      const [{ count }, { data: p }] = await Promise.all([
+        supabase.from("signal").select("master_signal_id", { count: "exact", head: true }),
+        supabase.from("partner").select("partner_name"),
+      ]);
+      if (count) setLiveStats({ signals: count, partners: (p || []).length });
+    })();
+  }, []);
+
   const stats = useMemo(() => datasetStats(rows), [rows]);
+
 
   const onFile = async (f: File) => {
     setLoading(true);

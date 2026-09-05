@@ -364,11 +364,16 @@ export default function CohortPlanner() {
 
             {loading ? (
               <div className="mt-3 text-sm text-indigo-600">Loading dataset…</div>
+            ) : liveStats ? (
+              <div className="mt-3 rounded-xl bg-indigo-50 px-4 py-2 text-sm text-indigo-800">
+                Live planning engine connected · {liveStats.signals.toLocaleString()} audience signals · {liveStats.partners} partner sources · joint geo × age × gender cube
+              </div>
             ) : (
               <div className="mt-3 rounded-xl bg-indigo-50 px-4 py-2 text-sm text-indigo-800">
                 Dataset loaded successfully · {stats.rows.toLocaleString()} rows · {stats.partners} partner sources · {stats.signals.toLocaleString()} audience signals
               </div>
             )}
+
 
             {tab === "search" ? (
               <>

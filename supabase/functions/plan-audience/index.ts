@@ -80,24 +80,25 @@ async function pass1(sb: SupabaseClient, brief: string): Promise<IR | null> {
   }
 
   const dimensions: IR["dimensions"] = { geo_tier: [], age_bucket: [], gender_bucket: [], city: null, above_age: null };
+  const push = (arr: string[], v: string) => { if (v && !arr.includes(v)) arr.push(v); };
   for (const d of dims || []) {
     const tok = String(d.token).toLowerCase();
     if (!has(tok)) continue;
-    const target = String(d.maps_to);
-    if (d.dim === "geo_tier" && !dimensions.geo_tier.includes(target)) dimensions.geo_tier.push(target);
-    else if (d.dim === "gender_bucket" && !dimensions.gender_bucket.includes(target)) dimensions.gender_bucket.push(target);
-    else if (d.dim === "age_bucket") {
-      for (const b of target.split(/[,|]/).map((x) => x.trim()).filter(Boolean)) {
-        if (!dimensions.age_bucket.includes(b)) dimensions.age_bucket.push(b);
-      }
+    const dim = String(d.dim).toLowerCase();
+    const targets = String(d.maps_to).split(/[,|]/).map((x) => x.trim()).filter(Boolean);
+    if (dim.startsWith("geo")) targets.forEach((t) => push(dimensions.geo_tier, t));
+    else if (dim.startsWith("gender")) targets.forEach((t) => push(dimensions.gender_bucket, t));
+    else if (dim.startsWith("age")) targets.forEach((t) => push(dimensions.age_bucket, t));
+    else if (dim.startsWith("above")) {
+      const v = Number(targets[0]);
+      if (!Number.isNaN(v)) dimensions.above_age = v;
     }
   }
-  const above = n.match(/(?:above|over|older than|25\s*\+|(\d{2})\s*\+)\s*(\d{2})?/);
-  const ageNum = above ? Number(above[2] || above[1]) : NaN;
-  if (!Number.isNaN(ageNum) && ageNum >= 18 && ageNum <= 60) {
-    dimensions.above_age = ageNum;
-    dimensions.age_bucket = AGE_ORDER.slice(1);
-  }
+  const above = n.match(/(?:above|over|older than)\s+(\d{2})/) || n.match(/(\d{2})\s*\+/);
+  const ageNum = above ? Number(above[1]) : NaN;
+  if (!Number.isNaN(ageNum) && ageNum >= 18 && ageNum <= 60) dimensions.above_age = ageNum;
+  if (dimensions.above_age != null) dimensions.age_bucket = AGE_ORDER.slice(1);
+
   for (const c of cities || []) {
     const key = String(c.normalized_city || c.city_name || "").toLowerCase();
     if (key && has(key)) { dimensions.city = String(c.city_name); break; }

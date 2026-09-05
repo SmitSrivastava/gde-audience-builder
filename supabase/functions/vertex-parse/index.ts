@@ -66,13 +66,14 @@ function responseSchema() {
         items: {
           type: "OBJECT",
           properties: {
+            id: { type: "STRING" },
             canonical: { type: "STRING" },
             family: { type: "STRING" },
             role: { type: "STRING", enum: ["primary", "and", "or"] },
             tokens: { type: "ARRAY", items: { type: "STRING" } },
             confidence: { type: "NUMBER" },
           },
-          required: ["canonical", "family", "role", "tokens"],
+          required: ["id", "canonical", "family", "role", "tokens"],
         },
       },
       modifiers: {
@@ -83,10 +84,12 @@ function responseSchema() {
             token: { type: "STRING" },
             op: { type: "STRING" },
             param: { type: "NUMBER" },
+            applies_to: { type: "ARRAY", items: { type: "STRING" } },
           },
-          required: ["token", "op"],
+          required: ["token", "op", "applies_to"],
         },
       },
+
       dimensions: {
         type: "OBJECT",
         properties: {

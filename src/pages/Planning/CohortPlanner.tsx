@@ -21,7 +21,39 @@ import {
   PlanResult,
 } from "@/lib/planningEngine";
 
+import { supabase } from "@/integrations/supabase/client";
+
 const LS_KEY = "gde_planning_dataset_v1";
+
+/* Convert the plan-audience payload (SQL + rules driven) into the UI shape. */
+function toPlanResult(brief: string, d: any): PlanResult {
+  const groups = (d.matched_signals || []).map((m: any, i: number) => ({
+    key: m.master_signal_id || `m${i}`,
+    label: m.audience_signal,
+    sector: m.sector || "—",
+    layer: m.layer || "—",
+    partners: [m.partner_sources].filter(Boolean),
+    volume: Number(m.scale) || 0,
+  }));
+  const bars = (arr: any[], key: string) =>
+    (arr || []).map((x) => ({ label: x[key], value: Number(x.volume) || 0, pct: (Number(x.share) || 0) * 100 }));
+  const hb = d.how_built || {};
+  return {
+    title: brief,
+    total: Number(d.people_reach) || 0,
+    confidence: (d.planning_confidence as PlanResult["confidence"]) || "Medium",
+    groups,
+    allGroups: groups,
+    geo: bars(d.geo_split, "geo_tier"),
+    age: bars(d.age_split, "age_bucket"),
+    gender: bars(d.gender_split, "gender_bucket"),
+    partners: d.partners || [],
+    notes: `Join ${hb.join || "OR"} across ${(hb.anchors || []).join(", ") || "matched families"}${
+      (hb.modifiers || []).length ? ` with modifiers ${(hb.modifiers || []).map((m: any) => m.token).join(", ")}` : ""
+    }. People reach is de-duplicated across partners using stored overlap rules, capped by India population ceilings. Rules applied: ${(hb.rules || []).join(" · ")}.`,
+  } as PlanResult;
+}
+
 
 const Bars = ({ title, data }: { title: string; data: { label: string; value: number; pct: number }[] }) => (
   <div>

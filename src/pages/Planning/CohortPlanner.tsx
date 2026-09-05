@@ -227,11 +227,29 @@ export default function CohortPlanner() {
     }
   };
 
-  const search = (q: string) => {
+  const search = async (q: string) => {
     if (!q.trim()) return;
     setQuery(q);
-    setResult(runSearch(rows, q));
+    setPlanning(true);
+    setPlanError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("plan-audience", { body: { brief: q } });
+      if (error) throw error;
+      if (data?.refuse?.flag) {
+        setResult(null);
+        setPlanError(data.refuse.reason || "No known audience family found in this brief.");
+        return;
+      }
+      setResult(toPlanResult(q, data));
+    } catch (e) {
+      console.error("plan-audience failed", e);
+      setResult(runSearch(rows, q));
+      setPlanError("Live planning engine unavailable — showing local estimate.");
+    } finally {
+      setPlanning(false);
+    }
   };
+
 
   const build = () => {
     const labels: string[] = [];

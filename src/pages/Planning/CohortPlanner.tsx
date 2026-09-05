@@ -216,7 +216,10 @@ export default function CohortPlanner() {
   const [tab, setTab] = useState<"search" | "build">("search");
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<PlanResult | null>(null);
+  const [payload, setPayload] = useState<any>(null);
+  const [filters, setFilters] = useState<Filters>({ geo_tier: [], age_bucket: [], gender_bucket: [] });
   const [expr, setExpr] = useState<Expression>(() => newGroup());
+
   const [planning, setPlanning] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
   const [chips, setChips] = useState<string[]>(EXAMPLES);

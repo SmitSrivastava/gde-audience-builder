@@ -30,17 +30,25 @@ serve(async (req) => {
       [r.partner_name, r.platform_tags, r.category, r.sub_category, r.signal, r.product_families, r.sector, r.layer]
         .filter(Boolean).join(" ")
     );
-    const vecs = await embed(docs, "RETRIEVAL_DOCUMENT");
 
-    let ok = 0;
-    for (let i = 0; i < rows.length; i++) {
-      const v = vecs[i];
-      if (!v) continue;
-      const { error: uerr } = await sb.from("signal")
-        .update({ embedding: JSON.stringify(v) })
-        .eq("master_signal_id", (rows[i] as any).master_signal_id);
-      if (!uerr) ok++;
+    // Embed in parallel chunks, then write everything in one bulk RPC.
+    const chunkSize = 20;
+    const chunks: { start: number; texts: string[] }[] = [];
+    for (let i = 0; i < docs.length; i += chunkSize) chunks.push({ start: i, texts: docs.slice(i, i + chunkSize) });
+    const vecs: number[][] = new Array(docs.length);
+    for (let i = 0; i < chunks.length; i += 6) {
+      const group = chunks.slice(i, i + 6);
+      const res = await Promise.all(group.map((c) => embed(c.texts, "RETRIEVAL_DOCUMENT")));
+      res.forEach((vs, gi) => vs.forEach((v, vi) => { vecs[group[gi].start + vi] = v; }));
     }
+
+    const payload = rows
+      .map((r: any, i: number) => (vecs[i] ? { id: r.master_signal_id, v: JSON.stringify(vecs[i]) } : null))
+      .filter(Boolean);
+    const { data: written, error: werr } = await sb.rpc("set_signal_embeddings", { payload });
+    if (werr) throw werr;
+    const ok = Number(written) || 0;
+
 
     const remaining = Math.max(0, (remainingBefore ?? rows.length) - ok);
     return new Response(JSON.stringify({ done: remaining === 0, embedded: ok, remaining }), {

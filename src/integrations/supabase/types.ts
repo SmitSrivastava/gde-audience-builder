@@ -720,6 +720,7 @@ export type Database = {
           volume: number
         }[]
       }
+      set_signal_embeddings: { Args: { payload: Json }; Returns: number }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       slice_signals: {

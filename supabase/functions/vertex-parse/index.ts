@@ -1,0 +1,201 @@
+// Supabase Edge Function: vertex-parse
+// Role: QueryIR compiler ONLY. Never returns a volume.
+
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import * as jose from "https://deno.land/x/jose@v5.9.6/index.ts";
+
+const PROJECT = Deno.env.get("GCP_PROJECT") ?? "acceleration-ga-poc";
+const LOCATION = Deno.env.get("GCP_LOCATION") ?? "asia-south1";
+const MODEL = Deno.env.get("GCP_MODEL") ?? "gemini-2.5-flash";
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+function normBrief(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9+]+/g, " ").replace(/\s+/g, " ").trim();
+}
+async function sha256(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+const SYSTEM = `You are the QueryIR compiler for WPP GDE Audience Intelligence (India).
+You do NOT estimate audience size. You do NOT pick overlap percentages. You do NOT pick partners.
+Emit JSON only that matches the schema.
+
+HARD RULES
+H1. Anchors are product/category nouns. "premium skincare and are likely to travel internationally" has TWO anchors: skincare (beauty, role=primary) AND international travel (travel, role=and). join=AND.
+H2. premium/luxury/heavy/organic/budget/affluent/hni/international are modifiers (operators), never anchors, unless the whole query is just that word.
+H3. female/women/male/young/millennial/metro/urban/bharat/tier 1/2/3 are DIMENSIONS, never modifiers.
+H4. "and" / "plus" / "who also" → join=AND. "or" / "either" → join=OR. Default OR only when a single noun.
+H5. Unknown family → refuse.flag=true. Do not guess "other".
+H6. above 25 → dimensions.above_age=25 and age_bucket=["23-28","29-34","35-40","41-46","47+"].
+H7. City names go to dimensions.city; do not also fill geo_tier unless the user said Metro/Tier.
+H8. mode="expected". Typo repair is allowed (choclate→chocolate). Inventing a family is not.
+H9. NEVER output a number, partner name (unless user named it), or volume.
+
+KNOWN FAMILIES
+sweets, ice_cream, bakery, snacks, biscuits, beverages_cold, beverages_hot, dairy, staples, fruits_veg, meat, packaged_food, baby, pet, beauty, personal_care, pharma, fitness, apparel, jewellery, electronics, appliances, home, auto, education, payments, grocery_retail, dining, travel, entertainment, finance, real_estate, agri, construction, industrial, toys, stationery, sexual_wellness, paan, luxury, fuel, utility`;
+
+function responseSchema() {
+  return {
+    type: "OBJECT",
+    properties: {
+      join: { type: "STRING", enum: ["AND", "OR"] },
+      anchors: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            canonical: { type: "STRING" },
+            family: { type: "STRING" },
+            role: { type: "STRING", enum: ["primary", "and", "or"] },
+            tokens: { type: "ARRAY", items: { type: "STRING" } },
+            confidence: { type: "NUMBER" },
+          },
+          required: ["canonical", "family", "role", "tokens"],
+        },
+      },
+      modifiers: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            token: { type: "STRING" },
+            op: { type: "STRING" },
+            param: { type: "NUMBER" },
+          },
+          required: ["token", "op"],
+        },
+      },
+      dimensions: {
+        type: "OBJECT",
+        properties: {
+          geo_tier: { type: "ARRAY", items: { type: "STRING" } },
+          age_bucket: { type: "ARRAY", items: { type: "STRING" } },
+          gender_bucket: { type: "ARRAY", items: { type: "STRING" } },
+          city: { type: "STRING" },
+          above_age: { type: "INTEGER" },
+        },
+      },
+      mode: { type: "STRING", enum: ["conservative", "expected", "aggressive"] },
+      refuse: {
+        type: "OBJECT",
+        properties: { flag: { type: "BOOLEAN" }, reason: { type: "STRING" } },
+        required: ["flag"],
+      },
+    },
+    required: ["join", "anchors", "modifiers", "dimensions", "mode", "refuse"],
+  };
+}
+
+async function accessToken(sa: Record<string, string>): Promise<string> {
+  const key = await jose.importPKCS8(sa.private_key, "RS256");
+  const now = Math.floor(Date.now() / 1000);
+  const jwt = await new jose.SignJWT({
+    scope: "https://www.googleapis.com/auth/cloud-platform",
+  })
+    .setProtectedHeader({ alg: "RS256", typ: "JWT" })
+    .setIssuer(sa.client_email)
+    .setSubject(sa.client_email)
+    .setAudience("https://oauth2.googleapis.com/token")
+    .setIssuedAt(now)
+    .setExpirationTime(now + 3600)
+    .sign(key);
+  const r = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+  });
+  const j = await r.json();
+  if (!j.access_token) throw new Error(`token failed ${r.status} ${JSON.stringify(j)}`);
+  return j.access_token;
+}
+
+function canonicalize(ir: any) {
+  ir.join = ir.join === "AND" ? "AND" : "OR";
+  ir.mode = ir.mode || "expected";
+  ir.modifiers = ir.modifiers || [];
+  ir.dimensions = ir.dimensions || {};
+  ir.dimensions.geo_tier = ir.dimensions.geo_tier || [];
+  ir.dimensions.age_bucket = ir.dimensions.age_bucket || [];
+  ir.dimensions.gender_bucket = ir.dimensions.gender_bucket || [];
+  ir.dimensions.city = ir.dimensions.city ?? null;
+  ir.dimensions.above_age = ir.dimensions.above_age ?? null;
+  ir.refuse = ir.refuse || { flag: false, reason: null };
+  ir.anchors = (ir.anchors || []).map((a: any) => ({
+    canonical: String(a.canonical || "").toLowerCase(),
+    family: String(a.family || "").toLowerCase(),
+    role: a.role || "primary",
+    tokens: (a.tokens || []).map((t: string) => String(t).toLowerCase()).sort(),
+    confidence: a.confidence ?? 0.8,
+  }));
+  ir.anchors.sort((a: any, b: any) => a.canonical.localeCompare(b.canonical));
+  ir.modifiers.sort((a: any, b: any) => a.token.localeCompare(b.token));
+  return ir;
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  try {
+    const { brief } = await req.json();
+    if (!brief || typeof brief !== "string") {
+      return new Response(JSON.stringify({ error: "brief required" }), { status: 400, headers: CORS });
+    }
+    const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const n = normBrief(brief);
+    const h = await sha256(n);
+
+    const cached = await sb.from("query_cache").select("query_ir, source").eq("brief_norm_hash", h).maybeSingle();
+    if (cached.data?.query_ir) {
+      return new Response(JSON.stringify({ query_ir: cached.data.query_ir, source: cached.data.source, cached: true }), {
+        headers: { ...CORS, "Content-Type": "application/json" },
+      });
+    }
+
+    const raw = Deno.env.get("GCP_SA_JSON");
+    if (!raw) {
+      return new Response(JSON.stringify({ error: "vertex_unconfigured" }), {
+        status: 424, headers: { ...CORS, "Content-Type": "application/json" },
+      });
+    }
+    const sa = JSON.parse(raw);
+    const token = await accessToken(sa);
+    const url = `https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/${LOCATION}/publishers/google/models/${MODEL}:generateContent`;
+    const body = {
+      systemInstruction: { role: "system", parts: [{ text: SYSTEM }] },
+      contents: [{ role: "user", parts: [{ text: brief }] }],
+      generationConfig: {
+        temperature: 0,
+        topP: 0,
+        candidateCount: 1,
+        maxOutputTokens: 1024,
+        responseMimeType: "application/json",
+        responseSchema: responseSchema(),
+        seed: 0,
+      },
+    };
+    const vr = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const vj = await vr.json();
+    const text = vj?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error(`vertex empty ${vr.status} ${JSON.stringify(vj).slice(0, 400)}`);
+    const ir = canonicalize(JSON.parse(text));
+    await sb.from("query_cache").upsert({
+      brief_norm_hash: h,
+      brief_norm: n,
+      query_ir: ir,
+      source: "vertex",
+    });
+    return new Response(JSON.stringify({ query_ir: ir, source: "vertex", cached: false }), {
+      headers: { ...CORS, "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { ...CORS, "Content-Type": "application/json" } });
+  }
+});

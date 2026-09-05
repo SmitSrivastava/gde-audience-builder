@@ -21,7 +21,39 @@ import {
   PlanResult,
 } from "@/lib/planningEngine";
 
+import { supabase } from "@/integrations/supabase/client";
+
 const LS_KEY = "gde_planning_dataset_v1";
+
+/* Convert the plan-audience payload (SQL + rules driven) into the UI shape. */
+function toPlanResult(brief: string, d: any): PlanResult {
+  const groups = (d.matched_signals || []).map((m: any, i: number) => ({
+    key: m.master_signal_id || `m${i}`,
+    label: m.audience_signal,
+    sector: m.sector || "—",
+    layer: m.layer || "—",
+    partners: [m.partner_sources].filter(Boolean),
+    volume: Number(m.scale) || 0,
+  }));
+  const bars = (arr: any[], key: string) =>
+    (arr || []).map((x) => ({ label: x[key], value: Number(x.volume) || 0, pct: (Number(x.share) || 0) * 100 }));
+  const hb = d.how_built || {};
+  return {
+    title: brief,
+    total: Number(d.people_reach) || 0,
+    confidence: (d.planning_confidence as PlanResult["confidence"]) || "Medium",
+    groups,
+    allGroups: groups,
+    geo: bars(d.geo_split, "geo_tier"),
+    age: bars(d.age_split, "age_bucket"),
+    gender: bars(d.gender_split, "gender_bucket"),
+    partners: d.partners || [],
+    notes: `Join ${hb.join || "OR"} across ${(hb.anchors || []).join(", ") || "matched families"}${
+      (hb.modifiers || []).length ? ` with modifiers ${(hb.modifiers || []).map((m: any) => m.token).join(", ")}` : ""
+    }. People reach is de-duplicated across partners using stored overlap rules, capped by India population ceilings. Rules applied: ${(hb.rules || []).join(" · ")}.`,
+  } as PlanResult;
+}
+
 
 const Bars = ({ title, data }: { title: string; data: { label: string; value: number; pct: number }[] }) => (
   <div>
@@ -185,7 +217,18 @@ export default function CohortPlanner() {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<PlanResult | null>(null);
   const [expr, setExpr] = useState<Expression>(() => newGroup());
+  const [planning, setPlanning] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [chips, setChips] = useState<string[]>(EXAMPLES);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    supabase.from("seed_chip").select("chip_label").then(({ data }) => {
+      const labels = (data || []).map((c: any) => c.chip_label).filter(Boolean);
+      if (labels.length) setChips(labels);
+    });
+  }, []);
+
 
   useEffect(() => {
     try {
@@ -199,7 +242,19 @@ export default function CohortPlanner() {
     }
   }, []);
 
+  const [liveStats, setLiveStats] = useState<{ signals: number; partners: number } | null>(null);
+  useEffect(() => {
+    (async () => {
+      const [{ count }, { data: p }] = await Promise.all([
+        supabase.from("signal").select("master_signal_id", { count: "exact", head: true }),
+        supabase.from("partner").select("partner_name"),
+      ]);
+      if (count) setLiveStats({ signals: count, partners: (p || []).length });
+    })();
+  }, []);
+
   const stats = useMemo(() => datasetStats(rows), [rows]);
+
 
   const onFile = async (f: File) => {
     setLoading(true);
@@ -227,11 +282,29 @@ export default function CohortPlanner() {
     }
   };
 
-  const search = (q: string) => {
+  const search = async (q: string) => {
     if (!q.trim()) return;
     setQuery(q);
-    setResult(runSearch(rows, q));
+    setPlanning(true);
+    setPlanError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("plan-audience", { body: { brief: q } });
+      if (error) throw error;
+      if (data?.refuse?.flag) {
+        setResult(null);
+        setPlanError(data.refuse.reason || "No known audience family found in this brief.");
+        return;
+      }
+      setResult(toPlanResult(q, data));
+    } catch (e) {
+      console.error("plan-audience failed", e);
+      setResult(runSearch(rows, q));
+      setPlanError("Live planning engine unavailable — showing local estimate.");
+    } finally {
+      setPlanning(false);
+    }
   };
+
 
   const build = () => {
     const labels: string[] = [];
@@ -291,11 +364,16 @@ export default function CohortPlanner() {
 
             {loading ? (
               <div className="mt-3 text-sm text-indigo-600">Loading dataset…</div>
+            ) : liveStats ? (
+              <div className="mt-3 rounded-xl bg-indigo-50 px-4 py-2 text-sm text-indigo-800">
+                Live planning engine connected · {liveStats.signals.toLocaleString()} audience signals · {liveStats.partners} partner sources · joint geo × age × gender cube
+              </div>
             ) : (
               <div className="mt-3 rounded-xl bg-indigo-50 px-4 py-2 text-sm text-indigo-800">
                 Dataset loaded successfully · {stats.rows.toLocaleString()} rows · {stats.partners} partner sources · {stats.signals.toLocaleString()} audience signals
               </div>
             )}
+
 
             {tab === "search" ? (
               <>
@@ -308,17 +386,23 @@ export default function CohortPlanner() {
                     placeholder="Search for audiences like premium skincare buyers, SUV intenders, UPI migration audience…"
                     className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm outline-none focus:border-indigo-400 focus:bg-white"
                   />
-                  <button onClick={() => search(query)} className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-7 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-200 hover:opacity-95">
-                    Find Scale
+                  <button
+                    onClick={() => search(query)}
+                    disabled={planning}
+                    className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-7 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-200 hover:opacity-95 disabled:opacity-60"
+                  >
+                    {planning ? "Planning…" : "Find Scale"}
                   </button>
                 </div>
+                {planError && <div className="mt-3 rounded-xl bg-amber-50 px-4 py-2 text-sm text-amber-800">{planError}</div>}
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {EXAMPLES.map((e) => (
+                  {chips.map((e) => (
                     <button key={e} onClick={() => search(e)} className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700">
                       {e}
                     </button>
                   ))}
                 </div>
+
               </>
             ) : (
               <>

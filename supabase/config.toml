@@ -1,1 +1,7 @@
 project_id = "cxwrjwqwsvlmeycoqsmm"
+
+[functions.plan-audience]
+verify_jwt = false
+
+[functions.vertex-parse]
+verify_jwt = false

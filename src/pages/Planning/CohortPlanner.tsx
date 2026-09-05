@@ -211,6 +211,11 @@ function ExpressionEditor({ node, onChange, onRemove, depth = 0 }: { node: Expre
 
 type Filters = { geo_tier: string[]; age_bucket: string[]; gender_bucket: string[] };
 
+const GEO_OPTS = ["Metro", "Tier 1", "Tier 2", "Tier 3"];
+const AGE_OPTS = ["Less than 22", "23-28", "29-34", "35-40", "41-46", "47+"];
+const GENDER_OPTS = ["Female", "Male", "Others"];
+
+
 const FilterPills = ({
   label, options, selected, onChange,
 }: { label: string; options: string[]; selected: string[]; onChange: (v: string[]) => void }) => (

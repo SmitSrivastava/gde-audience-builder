@@ -262,8 +262,20 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
         .select("master_signal_id, partner_name, pii, signal, product_families, platform_tags, layer, sector, category, sub_category, volume, reliability")
         .eq("platform_tags", "quick_commerce").eq("row_role", "intent")
         .order("volume", { ascending: false }).limit(12);
+      const DIMLIKE = /^(android|ios|male|female|others?|[\d]+\s*-\s*[\d]+k|sampling)$/i;
       const seenP = new Set(rows.map((r: any) => r.master_signal_id));
-      for (const r of zp || []) if (!seenP.has(r.master_signal_id)) rows.push({ ...r, sim: 0.9 });
+      for (const r of zp || []) {
+        if (seenP.has(r.master_signal_id) || DIMLIKE.test(String(r.signal || "").trim())) continue;
+        rows.push({ ...r, sim: 0.9 });
+      }
+      // Interest-backed q-commerce overlays from other partners.
+      const { data: ov } = await sb.from("signal")
+        .select("master_signal_id, partner_name, pii, signal, product_families, platform_tags, layer, sector, category, sub_category, volume, reliability")
+        .eq("row_role", "intent").gt("reliability", 0)
+        .is("platform_tags", null)
+        .or("signal.ilike.%commerce%,signal.ilike.%grocery%,sub_category.ilike.%commerce%")
+        .order("volume", { ascending: false }).limit(15);
+      for (const r of ov || []) if (!seenP.has(r.master_signal_id)) rows.push({ ...r, sim: 0.6 });
     }
   }
 

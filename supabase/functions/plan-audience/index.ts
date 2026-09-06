@@ -728,14 +728,18 @@ async function plan(
       actual = Math.min(actual, capAll);
       total = Math.max(total, actual);
     }
+    const scaledActual = actual * m.scale;
+    const scaledIntent = intent * m.scale;
     scored.push({
       anchor: m.anchor,
       live,
-      total: Math.min(total * m.scale, population),
-      actual: actual * m.scale,
-      intent: intent * m.scale,
+      // Purchase and interest are each complete counts; the anchor total is their union.
+      total: Math.min(reconcileUnion(total * m.scale, scaledActual, scaledIntent), population),
+      actual: scaledActual,
+      intent: scaledIntent,
     });
   }
+
 
   /* 5. Boolean algebra across anchors */
   let people = 0, actualPeople = 0, intentPeople = 0;

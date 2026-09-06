@@ -907,6 +907,8 @@ async function plan(
         `Anchors: ${anchors.map((a) => title(a.canonical)).join(` ${ir.join} `)}`,
         `Purchase-backed people counted in full: ${Math.round(actualPeople).toLocaleString("en-IN")} · interest-backed people counted in full: ${Math.round(intentPeople).toLocaleString("en-IN")}`,
         `Total, purchase and interest each use the same Boolean equation independently: ${Math.round(people).toLocaleString("en-IN")} total`,
+        ...(classFallback.length ? [`${classFallback.join(" and ")} had no rows on one side of the join, so it is counted across the audiences that do carry it.`] : []),
+
 
         anchors.length < 2
           ? "Single anchor: people counted once after phone/device de-duplication and partner overlap."

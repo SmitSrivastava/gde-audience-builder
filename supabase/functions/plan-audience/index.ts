@@ -81,13 +81,28 @@ async function loadFamilyVocab(sb: SupabaseClient) {
   }
   FAMILY_VOCAB = map;
 }
+// Retrieval text is built from the RESOLVED audience only. The user's leftover words
+// never steer the vector search, so two phrasings of one intent retrieve the same set.
 function anchorQueryText(anchor: Anchor) {
   const fam = String(anchor.family || "").toLowerCase();
   const canon = FAMILY_VOCAB[fam] || [];
-  const own = [anchor.canonical, ...anchor.tokens].map(cleanPhrase).filter(Boolean);
-  const words = [...new Set([...canon, ...own])];
+  const own = [anchor.canonical].map(cleanPhrase).filter(Boolean);
+  const words = [...new Set([...canon, ...own])].sort();
   return (words.join(" ") || cleanPhrase(anchor.canonical) || anchor.canonical).trim();
 }
+// A candidate may only enter an audience if it actually belongs to the resolved family
+// (or literally names the audience). This replaces "closest 60 wins".
+function belongsToFamily(r: any, anchor: Anchor) {
+  const fam = String(anchor.family || "").toLowerCase();
+  if (!fam) return true;
+  const fams = String(r.product_families || "").toLowerCase().split(/[,|]/).map((s: string) => s.trim());
+  if (fams.includes(fam)) return true;
+  const famWords = (FAMILY_VOCAB[fam] || []).concat(cleanPhrase(fam.replace(/_/g, " ")));
+  const text = squash(`${r.signal} ${r.category} ${r.sub_category}`);
+  const probes = [...new Set([...famWords, cleanPhrase(anchor.canonical)])].filter((w) => w && w.length >= 4);
+  return probes.some((w) => text.includes(squash(w)));
+}
+
 
 
 /* ---------------- deterministic fallback parser (only if Vertex is down) ---------------- */
@@ -223,8 +238,12 @@ serve(async (req) => {
       });
     }
 
-    const ENGINE_VERSION = "v9-cube-only-monotonic-filters";
-    const irHash = await sha256(ENGINE_VERSION + JSON.stringify(ir) + JSON.stringify(body.baseline ?? null));
+    const ENGINE_VERSION = "v10-family-gated-retrieval";
+    const evidence: "actual" | "intent" | null =
+      body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
+    const irHash = await sha256(
+      ENGINE_VERSION + JSON.stringify(ir) + JSON.stringify(body.baseline ?? null) + String(evidence),
+    );
     const cached = await sb.from("result_cache").select("payload").eq("query_ir_hash", irHash).maybeSingle();
     if (cached.data?.payload) {
       return new Response(JSON.stringify({ ...cached.data.payload, source, cached: true }), {
@@ -232,7 +251,7 @@ serve(async (req) => {
       });
     }
 
-    const payload = await plan(sb, ir, body.baseline ?? null);
+    const payload = await plan(sb, ir, body.baseline ?? null, evidence);
     await sb.from("result_cache").upsert({ query_ir_hash: irHash, query_ir: ir, payload });
     return new Response(JSON.stringify({ ...payload, source, cached: false }), {
       headers: { ...CORS, "Content-Type": "application/json" },
@@ -266,12 +285,19 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
   const [vec] = await embed([queryText], "RETRIEVAL_QUERY");
   const { data: knn, error } = await sb.rpc("match_signals", {
     query_embedding: JSON.stringify(vec),
-    match_count: 60,
+    match_count: 200,
     min_sim: 0.5,
   });
   if (error) throw error;
 
   let rows: any[] = knn || [];
+
+  // Wide pull, then gate: only signals that truly belong to the resolved family stay.
+  // Without the gate a fixed top-N cut lets an unrelated row evict a relevant one.
+  if (anchor.family && !isPlatform) {
+    const gated = rows.filter((r: any) => belongsToFamily(r, anchor));
+    if (gated.length) rows = gated;
+  }
 
   // Family rows keep the matcher honest for exact family asks.
   if (anchor.family && !isPlatform) {
@@ -283,7 +309,7 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
       String(r.product_families || "").split(",").map((s: string) => s.trim()).includes(anchor.family)
     );
     const tokenHit = exact.filter((r: any) =>
-      [anchor.canonical, ...anchor.tokens].some((t) => squash(`${r.signal} ${r.sub_category} ${r.category}`).includes(squash(t)))
+      [anchor.canonical].some((t) => squash(`${r.signal} ${r.sub_category} ${r.category}`).includes(squash(t)))
     );
     // Always seed the family's own consumer rows so two phrasings of the same
     // intent cannot land on wildly different candidate sets.
@@ -296,6 +322,19 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
       rows.push({ ...r, sim: 0.5 });
     }
   }
+
+  // Deterministic order: family-exact first, then scale, then id. Never score order.
+  if (!isPlatform) {
+    const famKey = String(anchor.family || "").toLowerCase();
+    const exactOf = (r: any) =>
+      String(r.product_families || "").toLowerCase().split(/[,|]/).map((s: string) => s.trim()).includes(famKey) ? 0 : 1;
+    rows = [...rows].sort((a: any, b: any) =>
+      exactOf(a) - exactOf(b) ||
+      Number(b.volume || 0) - Number(a.volume || 0) ||
+      String(a.master_signal_id).localeCompare(String(b.master_signal_id))
+    );
+  }
+
 
   // Business / RFQ supplier rows never belong in a consumer audience.
   if (!wantsB2B) {
@@ -587,7 +626,7 @@ function card(rows: Hit[], pick: "top" | "tight") {
 /* --------------------------------- plan --------------------------------- */
 type Baseline = { people_reach?: number; actual_people?: number; intent_people?: number } | null;
 
-async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null) {
+async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evidence: "actual" | "intent" | null = null) {
   await loadFamilyVocab(sb);
   let geos = ir.dimensions.geo_tier || [];
 
@@ -612,7 +651,10 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null) {
 
   for (const a of anchors) {
     const others = PLATFORM_RE.test(a.canonical) ? productFamilies : [];
-    const { hits, contextHits, isPlatform, scale } = await matchAnchor(sb, a, mods, others);
+    const m = await matchAnchor(sb, a, mods, others);
+    const { contextHits, isPlatform, scale } = m;
+    // Evidence toggle: restrict the whole page (headline, splits, table) to one class.
+    const hits = evidence ? m.hits.filter((h) => h.cls === evidence) : m.hits;
     // Every downstream metric uses the same post-modifier list shown in the table.
     // contextHits are retained only for diagnostics and must never enter scoring or slicing.
     const ids = [...new Set(hits.map((h) => h.master_signal_id))];
@@ -770,8 +812,8 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null) {
       actualPeople *= k;
       intentPeople *= k;
     }
-    if (Number(baseline.actual_people) >= 0) actualPeople = Math.min(actualPeople, Number(baseline.actual_people));
-    if (Number(baseline.intent_people) >= 0) intentPeople = Math.min(intentPeople, Number(baseline.intent_people));
+    if (!evidence && Number(baseline.actual_people) >= 0) actualPeople = Math.min(actualPeople, Number(baseline.actual_people));
+    if (!evidence && Number(baseline.intent_people) >= 0) intentPeople = Math.min(intentPeople, Number(baseline.intent_people));
   }
 
   const geo_split = Object.entries(mix.geo).map(([k, sh]) => ({ geo_tier: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
@@ -783,6 +825,7 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null) {
     base_cohort: anchors.map((a) => title(a.canonical)).join(` ${ir.join} `) || "—",
     modifier_line: modLine,
     dimension_line: dimBits.length ? dimBits.join(" · ") : "none",
+    evidence,
     people_reach: Math.round(peopleCapped),
     actual_people: Math.round(actualPeople),
     intent_people: Math.round(intentPeople),

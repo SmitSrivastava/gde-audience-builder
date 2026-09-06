@@ -256,8 +256,14 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
         return otherFamilies.some((f) => fams.includes(f));
       }).map((r: any) => ({ ...r, sim: 0.9 }));
     } else {
-      // Platform only -> the platform's own user universe, plus kNN overlays as intent.
-      rows = rows.filter((r: any) => r.platform_tags !== "quick_commerce");
+      // Platform only -> the platform's own user universe (KPI), plus its top nodes and
+      // the semantic q-commerce overlays from other partners for the signals table.
+      const { data: zp } = await sb.from("signal")
+        .select("master_signal_id, partner_name, pii, signal, product_families, platform_tags, layer, sector, category, sub_category, volume, reliability")
+        .eq("platform_tags", "quick_commerce").eq("row_role", "intent")
+        .order("volume", { ascending: false }).limit(12);
+      const seenP = new Set(rows.map((r: any) => r.master_signal_id));
+      for (const r of zp || []) if (!seenP.has(r.master_signal_id)) rows.push({ ...r, sim: 0.9 });
     }
   }
 

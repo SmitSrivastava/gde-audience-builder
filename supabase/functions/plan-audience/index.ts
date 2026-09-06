@@ -815,10 +815,13 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
   const geo_split = Object.entries(mix.geo).map(([k, sh]) => ({ geo_tier: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
   const age_split = Object.entries(mix.age).map(([k, sh]) => ({ age_bucket: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
   const gender_split = Object.entries(mix.gen).map(([k, sh]) => ({ gender_bucket: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
+  const includedLabel = anchors.map((a) => title(a.canonical)).join(` ${ir.join} `) || "—";
+  const exclusionLabel = (ir.exclusions || []).map((value) => title(canonicalAnchor(value))).filter(Boolean);
+  const baseCohort = exclusionLabel.length ? `${includedLabel} EXCLUDING ${exclusionLabel.join(" AND ")}` : includedLabel;
 
   return {
     query_ir: ir,
-    base_cohort: anchors.map((a) => title(a.canonical)).join(` ${ir.join} `) || "—",
+    base_cohort: baseCohort,
     modifier_line: modLine,
     dimension_line: dimBits.length ? dimBits.join(" · ") : "none",
     evidence,
@@ -842,11 +845,13 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
     how_built: {
       join: ir.join,
       anchors: anchors.map((a) => a.canonical),
+      exclusions: ir.exclusions || [],
       modifiers: mods,
       rules: [
         "Built from relevant partner audience signals",
         "Each qualifier is applied to the audience it describes",
         ir.join === "AND" ? "Includes people who meet every selected audience condition" : "Includes people who meet any selected audience condition",
+        ...(exclusionLabel.length ? [`Excludes overlap with ${exclusionLabel.join(" and ")}`] : []),
         "Presented as a unified addressable audience",
       ],
     },

@@ -404,6 +404,28 @@ export default function CohortPlanner() {
     }
   };
 
+  const partnerGroups = useMemo(() => {
+    const map = new Map<string, typeof result.groups>();
+    for (const g of result?.groups || []) {
+      const partner = (g.partners || []).join(", ") || "Unattributed";
+      map.set(partner, [...(map.get(partner) || []), g] as any);
+    }
+    return [...map.entries()]
+      .map(([partner, items]) => ({
+        partner,
+        items,
+        volume: items.reduce((s: number, x: any) => s + (x.volume || 0), 0),
+      }))
+      .sort((a, b) => b.volume - a.volume);
+  }, [result]);
+
+  const [collapsedPartners, setCollapsedPartners] = useState<string[]>([]);
+  const togglePartner = (partner: string) =>
+    setCollapsedPartners((prev) =>
+      prev.includes(partner) ? prev.filter((p) => p !== partner) : [...prev, partner],
+    );
+
+
   const toggleSignal = (signalId: string) =>
     recalc({
       disabled: disabledSignalIds.includes(signalId)
@@ -658,32 +680,56 @@ export default function CohortPlanner() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {result.groups.map((g) => {
-                        const off = disabledSignalIds.includes(g.key);
+                      {partnerGroups.map((pg) => {
+                        const open = !collapsedPartners.includes(pg.partner);
+                        const live = pg.items.filter((g: any) => !disabledSignalIds.includes(g.key)).length;
                         return (
-                          <tr key={g.key} className={`hover:bg-slate-50 ${off ? "opacity-45" : ""}`}>
-                            <td className="py-3">
-                              <input
-                                type="checkbox"
-                                checked={!off}
-                                onChange={() => toggleSignal(g.key)}
-                                aria-label={`Use ${g.label}`}
-                                className="h-4 w-4 accent-indigo-600"
-                              />
-                            </td>
-                            <td className="max-w-[260px] truncate py-3 font-medium text-slate-800">{g.label}</td>
-                            <td className="py-3">
-                              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                                (g as any).klass === "Actual" ? "bg-indigo-50 text-indigo-700" : "bg-violet-50 text-violet-700"
-                              }`}>
-                                {(g as any).klass === "Actual" ? "Purchase" : "Interest"}
-                              </span>
-                            </td>
-                            <td className="py-3 text-slate-600">{g.sector}</td>
-                            <td className="py-3 text-slate-600">{g.layer}</td>
-                            <td className="py-3 text-slate-600">{g.partners.join(", ")}</td>
-                            <td className="py-3 text-right font-semibold">{fmt(g.volume)}</td>
-                          </tr>
+                          <React.Fragment key={pg.partner}>
+                            <tr className="bg-slate-50/80">
+                              <td className="py-2.5">
+                                <button
+                                  type="button"
+                                  onClick={() => togglePartner(pg.partner)}
+                                  aria-label={`${open ? "Collapse" : "Expand"} ${pg.partner}`}
+                                  className="flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-200"
+                                >
+                                  {open ? "−" : "+"}
+                                </button>
+                              </td>
+                              <td colSpan={5} className="py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                                {pg.partner} · {live} of {pg.items.length} signals
+                              </td>
+                              <td className="py-2.5 text-right text-xs font-semibold text-slate-600">{fmt(pg.volume)}</td>
+                            </tr>
+                            {open && pg.items.map((g: any) => {
+                              const off = disabledSignalIds.includes(g.key);
+                              return (
+                                <tr key={g.key} className={`hover:bg-slate-50 ${off ? "opacity-45" : ""}`}>
+                                  <td className="py-3">
+                                    <input
+                                      type="checkbox"
+                                      checked={!off}
+                                      onChange={() => toggleSignal(g.key)}
+                                      aria-label={`Use ${g.label}`}
+                                      className="h-4 w-4 accent-indigo-600"
+                                    />
+                                  </td>
+                                  <td className="max-w-[260px] truncate py-3 pl-4 font-medium text-slate-800">{g.label}</td>
+                                  <td className="py-3">
+                                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                      g.klass === "Actual" ? "bg-indigo-50 text-indigo-700" : "bg-violet-50 text-violet-700"
+                                    }`}>
+                                      {g.klass === "Actual" ? "Purchase" : "Interest"}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 text-slate-600">{g.sector}</td>
+                                  <td className="py-3 text-slate-600">{g.layer}</td>
+                                  <td className="py-3 text-slate-600">{g.partners.join(", ")}</td>
+                                  <td className="py-3 text-right font-semibold">{fmt(g.volume)}</td>
+                                </tr>
+                              );
+                            })}
+                          </React.Fragment>
                         );
                       })}
                       {!result.groups.length && (
@@ -694,6 +740,7 @@ export default function CohortPlanner() {
                         </tr>
                       )}
                     </tbody>
+
                   </table>
                 </div>
 

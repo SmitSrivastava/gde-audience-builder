@@ -45,6 +45,51 @@ function modeCol(mode: IR["mode"]) {
 const squash = (s: unknown) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 function round4(x: number) { return Math.round(x * 10000) / 10000; }
 
+/* ------- anchor canonicalisation: same intent -> same retrieval text ------- */
+const FILLER = new Set([
+  "people","folks","users","user","audience","audiences","guys","crowd","group","groups",
+  "consumers","customers","segment","segments","cohort","cohorts","base","types","type",
+  "who","that","those","and","or","the","a","an","of","for","in","with","lovers","fans",
+]);
+const B2B_PARTNERS = new Set(["IndiaMart"]);
+const B2B_RE = /(b2b|business|wholesale|supplier|suppliers|rfq|distributor|manufacturer|bulk|trade)/i;
+function isB2BRow(r: any) {
+  if (B2B_PARTNERS.has(String(r.partner_name))) return true;
+  return B2B_RE.test(`${r.signal} ${r.category} ${r.sub_category}`);
+}
+function cleanPhrase(s: string) {
+  return String(s || "").toLowerCase().replace(/[^a-z0-9\s/+-]/g, " ")
+    .split(/[\s/]+/).filter((w) => w && !FILLER.has(w)).join(" ").trim();
+}
+// Canonical vocabulary per family, filled once per request from `synonym` + `family`.
+let FAMILY_VOCAB: Record<string, string[]> = {};
+async function loadFamilyVocab(sb: SupabaseClient) {
+  const [{ data: syns }, { data: fams }] = await Promise.all([
+    sb.from("synonym").select("token, family, role"),
+    sb.from("family").select("family, sector"),
+  ]);
+  const map: Record<string, string[]> = {};
+  for (const f of fams || []) {
+    const k = String(f.family).toLowerCase();
+    map[k] = [...new Set([...(map[k] || []), cleanPhrase(String(f.family).replace(/_/g, " "))])].filter(Boolean);
+  }
+  for (const s of syns || []) {
+    const k = String(s.family).toLowerCase();
+    const t = cleanPhrase(String(s.token));
+    if (!t) continue;
+    map[k] = [...new Set([...(map[k] || []), t])];
+  }
+  FAMILY_VOCAB = map;
+}
+function anchorQueryText(anchor: Anchor) {
+  const fam = String(anchor.family || "").toLowerCase();
+  const canon = FAMILY_VOCAB[fam] || [];
+  const own = [anchor.canonical, ...anchor.tokens].map(cleanPhrase).filter(Boolean);
+  const words = [...new Set([...canon, ...own])];
+  return (words.join(" ") || cleanPhrase(anchor.canonical) || anchor.canonical).trim();
+}
+
+
 /* ---------------- deterministic fallback parser (only if Vertex is down) ---------------- */
 async function pass1(sb: SupabaseClient, brief: string): Promise<IR | null> {
   const n = normBrief(brief);
@@ -178,7 +223,7 @@ serve(async (req) => {
       });
     }
 
-    const ENGINE_VERSION = "v5-post-modifier-classification";
+    const ENGINE_VERSION = "v6-canonical-anchor-retrieval";
     const irHash = await sha256(ENGINE_VERSION + JSON.stringify(ir));
     const cached = await sb.from("result_cache").select("payload").eq("query_ir_hash", irHash).maybeSingle();
     if (cached.data?.payload) {
@@ -216,7 +261,8 @@ function classify(r: any): "actual" | "intent" {
 
 async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[], otherFamilies: string[]) {
   const isPlatform = PLATFORM_RE.test(anchor.canonical) || PLATFORM_RE.test(anchor.tokens.join(" "));
-  const queryText = [...new Set([anchor.canonical, ...anchor.tokens])].join(" ");
+  const wantsB2B = B2B_RE.test([anchor.canonical, ...anchor.tokens, anchor.family].join(" "));
+  const queryText = anchorQueryText(anchor);
   const [vec] = await embed([queryText], "RETRIEVAL_QUERY");
   const { data: knn, error } = await sb.rpc("match_signals", {
     query_embedding: JSON.stringify(vec),
@@ -239,10 +285,24 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
     const tokenHit = exact.filter((r: any) =>
       [anchor.canonical, ...anchor.tokens].some((t) => squash(`${r.signal} ${r.sub_category} ${r.category}`).includes(squash(t)))
     );
-    const add = tokenHit.length ? tokenHit : exact;
+    // Always seed the family's own consumer rows so two phrasings of the same
+    // intent cannot land on wildly different candidate sets.
+    const familyFloor = [...exact].sort((a: any, b: any) => Number(b.volume) - Number(a.volume)).slice(0, 40);
+    const add = [...tokenHit, ...familyFloor];
     const seen = new Set(rows.map((r) => r.master_signal_id));
-    for (const r of add) if (!seen.has(r.master_signal_id)) rows.push({ ...r, sim: 0.5 });
+    for (const r of add) {
+      if (seen.has(r.master_signal_id)) continue;
+      seen.add(r.master_signal_id);
+      rows.push({ ...r, sim: 0.5 });
+    }
   }
+
+  // Business / RFQ supplier rows never belong in a consumer audience.
+  if (!wantsB2B) {
+    const consumer = rows.filter((r: any) => !isB2BRow(r));
+    if (consumer.length) rows = consumer;
+  }
+
 
   if (isPlatform) {
     if (otherFamilies.length) {
@@ -491,7 +551,9 @@ function card(rows: Hit[], pick: "top" | "tight") {
 
 /* --------------------------------- plan --------------------------------- */
 async function plan(sb: SupabaseClient, ir: IR) {
+  await loadFamilyVocab(sb);
   let geos = ir.dimensions.geo_tier || [];
+
   if (ir.dimensions.city) {
     const { data } = await sb.from("city_tier").select("geo_tier, city_name, normalized_city");
     const key = ir.dimensions.city.toLowerCase();

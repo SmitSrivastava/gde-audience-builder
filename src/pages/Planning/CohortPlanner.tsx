@@ -331,6 +331,7 @@ export default function CohortPlanner() {
     setFilters({ geo_tier: [], age_bucket: [], gender_bucket: [] });
     setEvidence(null);
     setDisabledSignalIds([]);
+    setExtraSignalIds([]);
     try {
       const { data, error } = await supabase.functions.invoke("plan-audience", { body: { brief: q } });
       if (error) throw error;
@@ -355,11 +356,22 @@ export default function CohortPlanner() {
     }
   };
 
-  const toggleSignal = async (signalId: string) => {
-    const next = disabledSignalIds.includes(signalId)
-      ? disabledSignalIds.filter((id) => id !== signalId)
-      : [...disabledSignalIds, signalId];
-    setDisabledSignalIds(next);
+  /* One recalculation path: ticks, added signals, filters and the evidence toggle
+     are all restrictions of the same reading of the brief. No re-parse, no new search. */
+  const recalc = async (next: {
+    filters?: Filters;
+    evidence?: "actual" | "intent" | null;
+    disabled?: string[];
+    extra?: string[];
+  }) => {
+    const nextFilters = next.filters ?? filters;
+    const nextEvidence = next.evidence !== undefined ? next.evidence : evidence;
+    const nextDisabled = next.disabled ?? disabledSignalIds;
+    const nextExtra = next.extra ?? extraSignalIds;
+    setFilters(nextFilters);
+    setEvidence(nextEvidence);
+    setDisabledSignalIds(nextDisabled);
+    setExtraSignalIds(nextExtra);
     const base = basePayload || payload;
     if (!base?.query_ir) return;
     setPlanning(true);
@@ -367,9 +379,10 @@ export default function CohortPlanner() {
       const { data, error } = await supabase.functions.invoke("plan-audience", {
         body: {
           query_ir: base.query_ir,
-          filters,
-          evidence,
-          disabled_ids: next,
+          filters: nextFilters,
+          evidence: nextEvidence,
+          disabled_ids: nextDisabled,
+          extra_ids: nextExtra,
           baseline: {
             people_reach: base.people_reach,
             actual_people: base.actual_people,
@@ -383,44 +396,29 @@ export default function CohortPlanner() {
         setResult(toPlanResult(query, data));
       }
     } catch (e) {
-      console.error("signal selection failed", e);
+      console.error("recalculation failed", e);
     } finally {
       setPlanning(false);
     }
   };
 
-  /* Re-slice the same reading of the brief with the page filters. No re-parse. */
-  const applyFilters = async (next: Filters, nextEvidence: "actual" | "intent" | null = evidence) => {
-    setFilters(next);
-    setEvidence(nextEvidence);
-    const base = basePayload || payload;
-    if (!base?.query_ir) return;
-    setPlanning(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("plan-audience", {
-        body: {
-          query_ir: base.query_ir,
-          filters: next,
-          evidence: nextEvidence,
-          disabled_ids: disabledSignalIds,
-          baseline: {
-            people_reach: base.people_reach,
-            actual_people: base.actual_people,
-            intent_people: base.intent_people,
-          },
-        },
-      });
-      if (error) throw error;
-      if (!data?.refuse?.flag) {
-        setPayload(data);
-        setResult(toPlanResult(query, data));
-      }
-    } catch (e) {
-      console.error("filter slice failed", e);
-    } finally {
-      setPlanning(false);
-    }
-  };
+  const toggleSignal = (signalId: string) =>
+    recalc({
+      disabled: disabledSignalIds.includes(signalId)
+        ? disabledSignalIds.filter((id) => id !== signalId)
+        : [...disabledSignalIds, signalId],
+    });
+
+  const toggleSuggestion = (signalId: string) =>
+    recalc({
+      extra: extraSignalIds.includes(signalId)
+        ? extraSignalIds.filter((id) => id !== signalId)
+        : [...extraSignalIds, signalId],
+    });
+
+  const applyFilters = (next: Filters, nextEvidence: "actual" | "intent" | null = evidence) =>
+    recalc({ filters: next, evidence: nextEvidence });
+
 
 
 

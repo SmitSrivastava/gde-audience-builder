@@ -276,6 +276,7 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
         .or("signal.ilike.%commerce%,signal.ilike.%grocery%,sub_category.ilike.%commerce%")
         .order("volume", { ascending: false }).limit(15);
       for (const r of ov || []) if (!seenP.has(r.master_signal_id)) rows.push({ ...r, sim: 0.6 });
+      rows = rows.filter((r: any) => !DIMLIKE.test(String(r.signal || "").trim()));
     }
   }
 

@@ -551,7 +551,9 @@ function card(rows: Hit[], pick: "top" | "tight") {
 
 /* --------------------------------- plan --------------------------------- */
 async function plan(sb: SupabaseClient, ir: IR) {
+  await loadFamilyVocab(sb);
   let geos = ir.dimensions.geo_tier || [];
+
   if (ir.dimensions.city) {
     const { data } = await sb.from("city_tier").select("geo_tier, city_name, normalized_city");
     const key = ir.dimensions.city.toLowerCase();

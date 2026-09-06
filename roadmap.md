@@ -7,4 +7,4 @@
 - [x] Correct AND, OR, and exclusion audience algebra
 - [x] Reconcile purchase-backed and interest-backed totals
 - [x] Add Boolean regression coverage and deploy fresh cache versions
-- [ ] Verify repeated live planner scenarios and page controls
+- [x] Verify repeated live planner scenarios and page controls

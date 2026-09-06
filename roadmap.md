@@ -13,3 +13,4 @@
 - [x] Derive OR exactly as A + B - AND and NOT exactly as A - AND
 - [x] Add executable validation for every requested Boolean invariant
 - [x] Verify live: Party, Dineout, AND, OR, NOT, plus purchase and interest values
+- [x] Show every contributing signal (60 per audience) grouped by data partner with expandable rows

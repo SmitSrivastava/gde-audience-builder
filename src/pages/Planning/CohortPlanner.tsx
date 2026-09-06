@@ -48,7 +48,9 @@ function toPlanResult(brief: string, d: any): PlanResult {
     age: bars(d.age_split, "age_bucket"),
     gender: bars(d.gender_split, "gender_bucket"),
     partners: d.partners || [],
-    notes: `Read as ${d.base_cohort || brief}. Each qualifier is applied to the audience it describes, and the result represents people who meet ${d.query_ir?.join === "AND" ? "every selected condition" : "the selected conditions"}.`,
+    notes: Array.isArray(d.how_built?.rules)
+      ? d.how_built.rules.join(" ")
+      : `Anchors: ${d.base_cohort || brief}.`,
   } as PlanResult;
 }
 
@@ -259,6 +261,7 @@ export default function CohortPlanner() {
   const fileRef = useRef<HTMLInputElement>(null);
   // Evidence toggle: restricts the whole page to purchase-backed or interest-backed people.
   const [evidence, setEvidence] = useState<"actual" | "intent" | null>(null);
+  const [disabledSignalIds, setDisabledSignalIds] = useState<string[]>([]);
 
   useEffect(() => {
     supabase.from("seed_chip").select("chip_label").then(({ data }) => {
@@ -327,6 +330,7 @@ export default function CohortPlanner() {
     setPlanError(null);
     setFilters({ geo_tier: [], age_bucket: [], gender_bucket: [] });
     setEvidence(null);
+    setDisabledSignalIds([]);
     try {
       const { data, error } = await supabase.functions.invoke("plan-audience", { body: { brief: q } });
       if (error) throw error;
@@ -351,6 +355,40 @@ export default function CohortPlanner() {
     }
   };
 
+  const toggleSignal = async (signalId: string) => {
+    const next = disabledSignalIds.includes(signalId)
+      ? disabledSignalIds.filter((id) => id !== signalId)
+      : [...disabledSignalIds, signalId];
+    setDisabledSignalIds(next);
+    const base = basePayload || payload;
+    if (!base?.query_ir) return;
+    setPlanning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("plan-audience", {
+        body: {
+          query_ir: base.query_ir,
+          filters,
+          evidence,
+          disabled_ids: next,
+          baseline: {
+            people_reach: base.people_reach,
+            actual_people: base.actual_people,
+            intent_people: base.intent_people,
+          },
+        },
+      });
+      if (error) throw error;
+      if (!data?.refuse?.flag) {
+        setPayload(data);
+        setResult(toPlanResult(query, data));
+      }
+    } catch (e) {
+      console.error("signal selection failed", e);
+    } finally {
+      setPlanning(false);
+    }
+  };
+
   /* Re-slice the same reading of the brief with the page filters. No re-parse. */
   const applyFilters = async (next: Filters, nextEvidence: "actual" | "intent" | null = evidence) => {
     setFilters(next);
@@ -364,6 +402,7 @@ export default function CohortPlanner() {
           query_ir: base.query_ir,
           filters: next,
           evidence: nextEvidence,
+          disabled_ids: disabledSignalIds,
           baseline: {
             people_reach: base.people_reach,
             actual_people: base.actual_people,
@@ -603,6 +642,7 @@ export default function CohortPlanner() {
                   <table className="w-full text-left text-sm">
                     <thead>
                       <tr className="text-xs uppercase tracking-wide text-slate-400">
+                        <th className="w-10 pb-2"><span className="sr-only">Use signal</span></th>
                         <th className="pb-2">Audience Signal</th>
                         <th className="pb-2">Type</th>
                         <th className="pb-2">Sector</th>
@@ -614,6 +654,15 @@ export default function CohortPlanner() {
                     <tbody className="divide-y divide-slate-100">
                       {result.groups.map((g) => (
                         <tr key={g.key} className="hover:bg-slate-50">
+                          <td className="py-3">
+                            <input
+                              type="checkbox"
+                              checked={!disabledSignalIds.includes(g.key)}
+                              onChange={() => toggleSignal(g.key)}
+                              aria-label={`Use ${g.label}`}
+                              className="h-4 w-4 accent-indigo-600"
+                            />
+                          </td>
                           <td className="max-w-[260px] truncate py-3 font-medium text-slate-800">{g.label}</td>
                           <td className="py-3">
                             <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
@@ -630,7 +679,7 @@ export default function CohortPlanner() {
                       ))}
                       {!result.groups.length && (
                         <tr>
-                          <td colSpan={6} className="py-6 text-center text-slate-500">
+                          <td colSpan={7} className="py-6 text-center text-slate-500">
                             No matching audience signals found. Try a broader cohort description.
                           </td>
                         </tr>

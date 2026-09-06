@@ -178,7 +178,7 @@ serve(async (req) => {
       });
     }
 
-    const ENGINE_VERSION = "v4-post-modifier-metrics";
+    const ENGINE_VERSION = "v5-post-modifier-classification";
     const irHash = await sha256(ENGINE_VERSION + JSON.stringify(ir));
     const cached = await sb.from("result_cache").select("payload").eq("query_ir_hash", irHash).maybeSingle();
     if (cached.data?.payload) {
@@ -544,10 +544,12 @@ async function plan(sb: SupabaseClient, ir: IR) {
     people = 0;
   } else if (platformAnd) {
     // Platform x family: the platform's own rows in that family already ARE the intersection.
-    const p = scored.find((s) => s.isPlatform)!;
-    people = p.actual || p.intent;
-    actualPeople = p.actual;
-    intentPeople = Math.max(0, people - actualPeople);
+    const p = scored.find((s) => s.isPlatform);
+    if (p) {
+      people = p.actual || p.intent;
+      actualPeople = p.actual;
+      intentPeople = Math.max(0, people - actualPeople);
+    }
   } else if (ir.join === "AND" && scored.length >= 2) {
     const A = scored[0], B = scored[1];
     const { data } = await sb.from("and_intersect_rho").select("*")

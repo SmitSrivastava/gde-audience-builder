@@ -241,7 +241,139 @@ const FilterPills = ({
   </div>
 );
 
+/* ---------------- AI audience strategy (suggestive) ---------------- */
+type Strategy = {
+  positioning?: string;
+  acquisition?: string[];
+  aov_growth?: string[];
+  paid_media?: { channel: string; why: string; format: string }[];
+  crm?: { channel: string; trigger: string; message: string }[];
+  watchouts?: string[];
+};
+
+const StratList = ({ title, items, accent }: { title: string; items?: string[]; accent: string }) => (
+  <div className="rounded-2xl border border-slate-200 bg-white p-5">
+    <div className={`mb-3 text-sm font-semibold ${accent}`}>{title}</div>
+    <ul className="space-y-2">
+      {(items || []).map((t, i) => (
+        <li key={i} className="flex gap-2 text-sm leading-relaxed text-slate-700">
+          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
+          <span>{t}</span>
+        </li>
+      ))}
+    </ul>
+  </div>
+);
+
+const AudienceStrategy = ({ payload, brief }: { payload: any; brief: string }) => {
+  const [data, setData] = useState<Strategy | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const key = payload ? `${payload.base_cohort}|${payload.people_reach}|${payload.evidence}` : "";
+
+  useEffect(() => {
+    if (!payload) {
+      setData(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setBusy(true);
+      setErr(null);
+      try {
+        const { data: res, error } = await supabase.functions.invoke("audience-strategy", {
+          body: {
+            brief,
+            base_cohort: payload.base_cohort,
+            people_reach: payload.people_reach,
+            actual_people: payload.actual_people,
+            intent_people: payload.intent_people,
+            modifier_line: payload.modifier_line,
+            dimension_line: payload.dimension_line,
+            partners: payload.partners,
+            matched_signals: payload.matched_signals,
+            geo_split: payload.geo_split,
+            age_split: payload.age_split,
+            gender_split: payload.gender_split,
+          },
+        });
+        if (error) throw error;
+        if (!cancelled) setData(res as Strategy);
+      } catch (e) {
+        if (!cancelled) setErr("Strategy suggestions are unavailable right now.");
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  if (!payload) return null;
+
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 to-indigo-50/60 p-7 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-lg font-semibold text-slate-900">Audience Strategy</div>
+          <div className="text-xs text-slate-500">Generated for {payload.base_cohort}</div>
+        </div>
+        <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700">
+          Suggestive only — not an absolute recommendation
+        </span>
+      </div>
+
+      {busy && <div className="mt-6 text-sm text-slate-500">Building strategy suggestions…</div>}
+      {err && !busy && <div className="mt-6 text-sm text-slate-500">{err}</div>}
+
+      {data && !busy && (
+        <div className="mt-6 space-y-5">
+          {data.positioning && (
+            <div className="rounded-2xl border border-indigo-200 bg-white p-5 text-sm leading-relaxed text-slate-800">
+              {data.positioning}
+            </div>
+          )}
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <StratList title="Acquiring new audience in this space" items={data.acquisition} accent="text-indigo-700" />
+            <StratList title="Growing average order value in this cohort" items={data.aov_growth} accent="text-violet-700" />
+            <div className="rounded-2xl border border-slate-200 bg-white p-5">
+              <div className="mb-3 text-sm font-semibold text-cyan-700">Best paid media channels</div>
+              <div className="space-y-3">
+                {(data.paid_media || []).map((p, i) => (
+                  <div key={i} className="rounded-xl bg-slate-50 p-3">
+                    <div className="text-sm font-semibold text-slate-800">{p.channel}</div>
+                    <div className="text-xs text-slate-600">{p.why}</div>
+                    <div className="mt-1 text-xs font-medium text-slate-500">Format: {p.format}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5">
+              <div className="mb-3 text-sm font-semibold text-fuchsia-700">CRM campaigns</div>
+              <div className="space-y-3">
+                {(data.crm || []).map((c, i) => (
+                  <div key={i} className="rounded-xl bg-slate-50 p-3">
+                    <div className="text-sm font-semibold text-slate-800">{c.channel}</div>
+                    <div className="text-xs text-slate-600">Trigger: {c.trigger}</div>
+                    <div className="mt-1 text-xs text-slate-600">{c.message}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          {!!(data.watchouts || []).length && (
+            <StratList title="Watch-outs before scaling" items={data.watchouts} accent="text-amber-700" />
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ---------------- page ---------------- */
+
 
 export default function CohortPlanner() {
   const [rows, setRows] = useState<Row[]>(() => getBundledRows());

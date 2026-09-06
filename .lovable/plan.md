@@ -1,70 +1,72 @@
-# Why the top number is bigger than purchase + interest — and a one-time fix
+# Fix the zero purchase/interest boxes, then run your 100-query test battery
 
 ## What your screenshot shows
 
-12.3M at the top, 9.9M purchase-backed, 1.6M interest-backed. Those two add to
-11.5M, so 0.8M people appear to come from nowhere. The geo bars (9.7M + 1.5M +
-954K + 194K) add back up to 12.3M, so Tier 2 and Tier 3 are not extra people —
-the bars simply spread the top number across tiers, so any error in the top
-number shows up there too.
+Total 754K, purchase-backed 0, interest-backed 0. Every matched person is
+labelled either purchase-backed or interest-backed, so the two boxes must add
+up to the total. Both being zero is impossible and proves a calculation fault,
+not a data gap.
 
-## Where the 0.8M actually comes from (confirmed in the engine)
+## Confirmed cause (read from the engine)
 
-Every matched row is labelled either purchase-backed or interest-backed — never
-both, never neither. So the two boxes must fully cover the top number: the top
-number can never be larger than the two added together.
+For an "and" query the engine runs the combine step three separate times: once
+on the total, once on purchase-backed only, once on interest-backed only. Each
+class is combined independently, so if one side of the "and" has no
+purchase-backed rows (luxury cars are interest signals) the purchase result
+collapses to zero; if the other side has no interest-backed rows the interest
+result collapses to zero as well. The total survives because it is computed on
+the full row set. Nothing forces the parts to add back to the whole, and no
+check catches it before the answer is returned.
 
-The engine breaks that rule because it runs the de-duplication **three separate
-times**: once over all rows, once over purchase rows only, once over interest
-rows only. Each run estimates person-overlap between partners using stored
-correlation values, and the run over the full set removes a different amount of
-overlap than the two smaller runs do. Three independent estimates cannot be
-expected to agree, so the parts stop matching the whole. When two audiences are
-combined with "and", the same mismatch is repeated a second time, because the
-combine step is also applied to the total and the two classes independently.
-
-There is also no check anywhere that the parts and the whole agree — so a broken
-number is returned instead of being caught.
+A second confirmed gap: the engine returns geo, age and gender splits only.
+There is no nested split (geo inside age inside gender, etc.), so check 9 in
+your list cannot pass today in any nesting order.
 
 ## The fix
 
-1. **De-duplicate once, then split.** Build one person-set for the whole
-   audience. Purchase-backed and interest-backed become slices of that same
-   set — each person is attributed to the class of the strongest evidence
-   behind them — instead of three separate calculations. The two boxes then
-   always add exactly to the top number.
+1. **One person-set, then slice it.** Combine once on the whole audience, then
+   derive purchase-backed and interest-backed as shares of that same result.
+   Each person is attributed to the class of the strongest evidence behind
+   them. The two boxes then always add exactly to the headline, and neither can
+   be zero while the headline is not.
 
-2. **Combine once, then split.** For "and", "or" and "excluding", the combine
-   happens on the single person-set, and the two classes are re-derived from
-   the result. No operator is applied three times any more.
+2. **Same rule for and / or / excluding**, for single-anchor queries, for
+   nested Boolean queries, and under every geo, age, gender, above-age and
+   evidence filter.
 
-3. **Same rule under every filter.** Metro, age, gender, above-age and the
-   purchase/interest toggle all restrict the same set, so the parts keep adding
-   up after filtering too.
+3. **Nested splits.** Add a nested breakdown supporting all six orders (geo →
+   age → gender, geo → gender → age, age → geo → gender, age → gender → geo,
+   gender → geo → age, gender → age → geo), each level adding back to its
+   parent and the top level adding to the headline.
 
-4. **A guard that cannot be skipped.** Before any result is returned it must
-   satisfy, for the unfiltered run and every filtered run:
-   - purchase + interest = total (within rounding)
-   - neither class larger than the total
-   - geo bars, age bars and gender bars each add to the total
-   - any filtered total no larger than the unfiltered one
-   - "or" ≥ each audience ≥ "and", and "excluding" ≤ the base audience
-   If a check fails the engine corrects the number rather than shipping it, and
-   records which check fired.
+4. **A guard that cannot be skipped.** Before any answer is returned:
+   purchase + interest = total; neither part above the total; total not zero
+   when matched rows exist; every split adds to the total; "or" ≥ each side ≥
+   "and"; "excluding" ≤ the base audience; suggestions excluded unless ticked.
+   A failed check is corrected and recorded, never shipped.
 
-5. **Verify the whole class of issue once, not this one screenshot.** Run a
-   fixed battery live and report every number: skincare AND suv, party AND
-   dineout, party OR dineout, party excluding dineout, three-audience combos,
-   premium skincare female above 25 metro, quick-commerce snacks — each of them
-   unfiltered, then per geo tier, per age band, per gender, and with both
-   evidence toggles. Every run is checked against the list above and the results
-   are pasted back to you.
+## Then: the full 100-query battery
+
+All 100 queries run live against the real engine, each checked on your 14
+points: valid parse, correct anchors, correct modifiers, correct operator
+(single / and / or / excluding / nested), non-empty matched table, non-zero
+result where data exists, every output field populated (reach, confidence,
+matched signals, primary and expansion audience, geo/age/gender/nested splits,
+how-it-was-built trace), splits reconciling, all six nesting orders, wording
+variants giving the identical result, Boolean ordering holding, fallback and
+modifier behaviour clearly labelled, suggestions not silently counted, and the
+query written to the audit/cache record.
+
+You get one results table back: query, detected anchors, operator, headline,
+purchase, interest, and PASS or the exact check that failed. Every failure that
+is an engine fault gets fixed and re-run until the battery is clean; anything
+that is genuinely absent from the source data is reported as such rather than
+patched with an invented number.
 
 ## Technical notes
 
-Changes stay inside `supabase/functions/plan-audience/index.ts`
-(`uniquePeopleForClass` returns a person-set with per-class attribution rather
-than three scalars; the Boolean fold and the exclusion loop operate on that set;
-splits read the same set), `supabase/functions/_shared/audience-algebra.ts` (the
-invariant guard), plus tests. Engine version bumped so cached answers recompute.
-No page redesign, no data reload.
+Work stays in `supabase/functions/plan-audience/index.ts` (single de-duplicated
+person-set with per-class attribution replacing the three independent folds; new
+nested split builder), `supabase/functions/_shared/audience-algebra.ts` (the
+invariant guard), plus tests and the harness that runs the 100 queries. Engine
+version bumped so cached answers recompute. No page redesign, no data reload.

@@ -508,7 +508,7 @@ async function uniquePeopleForClass(
       x.attribute_relation === rel
     ));
     const stored = Math.max(0, ...candidates.map((x: any) => Number(x.rho_same_pii || x.base_rho || 0)));
-    const rho = same ? Math.min(0.70, Math.max(0.55, stored)) : Math.min(0.85, Math.max(0.08, stored));
+    const rho = same ? Math.min(0.70, Math.max(0.65, stored)) : Math.min(0.85, Math.max(0.08, stored));
     const overlap = rho * Math.min(reach, n.people);
     reach += n.people - overlap;
     n.families.forEach((f) => accF.add(f));
@@ -872,7 +872,11 @@ async function plan(
         `Anchors: ${anchors.map((a) => title(a.canonical)).join(` ${ir.join} `)}`,
         `Unique purchase people after nesting and partner overlap: ${Math.round(actualPeople).toLocaleString("en-IN")}`,
         `Unique interest people shown separately, not added: ${Math.round(intentPeople).toLocaleString("en-IN")}`,
-        ir.join === "AND" ? "The headline is the purchase intersection." : "The headline is the purchase union: A + B − intersection.",
+        anchors.length < 2
+          ? "The headline is unique purchase people; interest is not added."
+          : ir.join === "AND"
+          ? "The headline is the purchase intersection."
+          : "The headline is the purchase union: A + B − intersection.",
         ...(exclusionLabel.length ? [`Excludes overlap with ${exclusionLabel.join(" and ")}`] : []),
         "Presented as a unified addressable audience",
       ],

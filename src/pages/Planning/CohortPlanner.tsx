@@ -262,6 +262,8 @@ export default function CohortPlanner() {
   // Evidence toggle: restricts the whole page to purchase-backed or interest-backed people.
   const [evidence, setEvidence] = useState<"actual" | "intent" | null>(null);
   const [disabledSignalIds, setDisabledSignalIds] = useState<string[]>([]);
+  const [extraSignalIds, setExtraSignalIds] = useState<string[]>([]);
+
 
   useEffect(() => {
     supabase.from("seed_chip").select("chip_label").then(({ data }) => {
@@ -331,6 +333,7 @@ export default function CohortPlanner() {
     setFilters({ geo_tier: [], age_bucket: [], gender_bucket: [] });
     setEvidence(null);
     setDisabledSignalIds([]);
+    setExtraSignalIds([]);
     try {
       const { data, error } = await supabase.functions.invoke("plan-audience", { body: { brief: q } });
       if (error) throw error;
@@ -355,11 +358,22 @@ export default function CohortPlanner() {
     }
   };
 
-  const toggleSignal = async (signalId: string) => {
-    const next = disabledSignalIds.includes(signalId)
-      ? disabledSignalIds.filter((id) => id !== signalId)
-      : [...disabledSignalIds, signalId];
-    setDisabledSignalIds(next);
+  /* One recalculation path: ticks, added signals, filters and the evidence toggle
+     are all restrictions of the same reading of the brief. No re-parse, no new search. */
+  const recalc = async (next: {
+    filters?: Filters;
+    evidence?: "actual" | "intent" | null;
+    disabled?: string[];
+    extra?: string[];
+  }) => {
+    const nextFilters = next.filters ?? filters;
+    const nextEvidence = next.evidence !== undefined ? next.evidence : evidence;
+    const nextDisabled = next.disabled ?? disabledSignalIds;
+    const nextExtra = next.extra ?? extraSignalIds;
+    setFilters(nextFilters);
+    setEvidence(nextEvidence);
+    setDisabledSignalIds(nextDisabled);
+    setExtraSignalIds(nextExtra);
     const base = basePayload || payload;
     if (!base?.query_ir) return;
     setPlanning(true);
@@ -367,9 +381,10 @@ export default function CohortPlanner() {
       const { data, error } = await supabase.functions.invoke("plan-audience", {
         body: {
           query_ir: base.query_ir,
-          filters,
-          evidence,
-          disabled_ids: next,
+          filters: nextFilters,
+          evidence: nextEvidence,
+          disabled_ids: nextDisabled,
+          extra_ids: nextExtra,
           baseline: {
             people_reach: base.people_reach,
             actual_people: base.actual_people,
@@ -383,44 +398,29 @@ export default function CohortPlanner() {
         setResult(toPlanResult(query, data));
       }
     } catch (e) {
-      console.error("signal selection failed", e);
+      console.error("recalculation failed", e);
     } finally {
       setPlanning(false);
     }
   };
 
-  /* Re-slice the same reading of the brief with the page filters. No re-parse. */
-  const applyFilters = async (next: Filters, nextEvidence: "actual" | "intent" | null = evidence) => {
-    setFilters(next);
-    setEvidence(nextEvidence);
-    const base = basePayload || payload;
-    if (!base?.query_ir) return;
-    setPlanning(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("plan-audience", {
-        body: {
-          query_ir: base.query_ir,
-          filters: next,
-          evidence: nextEvidence,
-          disabled_ids: disabledSignalIds,
-          baseline: {
-            people_reach: base.people_reach,
-            actual_people: base.actual_people,
-            intent_people: base.intent_people,
-          },
-        },
-      });
-      if (error) throw error;
-      if (!data?.refuse?.flag) {
-        setPayload(data);
-        setResult(toPlanResult(query, data));
-      }
-    } catch (e) {
-      console.error("filter slice failed", e);
-    } finally {
-      setPlanning(false);
-    }
-  };
+  const toggleSignal = (signalId: string) =>
+    recalc({
+      disabled: disabledSignalIds.includes(signalId)
+        ? disabledSignalIds.filter((id) => id !== signalId)
+        : [...disabledSignalIds, signalId],
+    });
+
+  const toggleSuggestion = (signalId: string) =>
+    recalc({
+      extra: extraSignalIds.includes(signalId)
+        ? extraSignalIds.filter((id) => id !== signalId)
+        : [...extraSignalIds, signalId],
+    });
+
+  const applyFilters = (next: Filters, nextEvidence: "actual" | "intent" | null = evidence) =>
+    recalc({ filters: next, evidence: nextEvidence });
+
 
 
 
@@ -637,7 +637,13 @@ export default function CohortPlanner() {
                   </div>
                 )}
 
-                <div className="mt-7 text-sm font-semibold text-slate-700">Matched Audience Signals</div>
+                <div className="mt-7 flex flex-wrap items-baseline justify-between gap-2">
+                  <div className="text-sm font-semibold text-slate-700">Matched Audience Signals</div>
+                  <div className="text-xs font-medium text-slate-500">
+                    {result.groups.filter((g) => !disabledSignalIds.includes(g.key)).length} of {result.groups.length} signals in the scale
+                    {extraSignalIds.length ? ` · ${extraSignalIds.length} added from expand selection` : ""}
+                  </div>
+                </div>
                 <div className="mt-3 overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead>
@@ -652,31 +658,34 @@ export default function CohortPlanner() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {result.groups.map((g) => (
-                        <tr key={g.key} className="hover:bg-slate-50">
-                          <td className="py-3">
-                            <input
-                              type="checkbox"
-                              checked={!disabledSignalIds.includes(g.key)}
-                              onChange={() => toggleSignal(g.key)}
-                              aria-label={`Use ${g.label}`}
-                              className="h-4 w-4 accent-indigo-600"
-                            />
-                          </td>
-                          <td className="max-w-[260px] truncate py-3 font-medium text-slate-800">{g.label}</td>
-                          <td className="py-3">
-                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                              (g as any).klass === "Actual" ? "bg-indigo-50 text-indigo-700" : "bg-violet-50 text-violet-700"
-                            }`}>
-                              {(g as any).klass === "Actual" ? "Purchase" : "Interest"}
-                            </span>
-                          </td>
-                          <td className="py-3 text-slate-600">{g.sector}</td>
-                          <td className="py-3 text-slate-600">{g.layer}</td>
-                          <td className="py-3 text-slate-600">{g.partners.join(", ")}</td>
-                          <td className="py-3 text-right font-semibold">{fmt(g.volume)}</td>
-                        </tr>
-                      ))}
+                      {result.groups.map((g) => {
+                        const off = disabledSignalIds.includes(g.key);
+                        return (
+                          <tr key={g.key} className={`hover:bg-slate-50 ${off ? "opacity-45" : ""}`}>
+                            <td className="py-3">
+                              <input
+                                type="checkbox"
+                                checked={!off}
+                                onChange={() => toggleSignal(g.key)}
+                                aria-label={`Use ${g.label}`}
+                                className="h-4 w-4 accent-indigo-600"
+                              />
+                            </td>
+                            <td className="max-w-[260px] truncate py-3 font-medium text-slate-800">{g.label}</td>
+                            <td className="py-3">
+                              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                (g as any).klass === "Actual" ? "bg-indigo-50 text-indigo-700" : "bg-violet-50 text-violet-700"
+                              }`}>
+                                {(g as any).klass === "Actual" ? "Purchase" : "Interest"}
+                              </span>
+                            </td>
+                            <td className="py-3 text-slate-600">{g.sector}</td>
+                            <td className="py-3 text-slate-600">{g.layer}</td>
+                            <td className="py-3 text-slate-600">{g.partners.join(", ")}</td>
+                            <td className="py-3 text-right font-semibold">{fmt(g.volume)}</td>
+                          </tr>
+                        );
+                      })}
                       {!result.groups.length && (
                         <tr>
                           <td colSpan={7} className="py-6 text-center text-slate-500">
@@ -688,27 +697,47 @@ export default function CohortPlanner() {
                   </table>
                 </div>
 
-                {(payload?.primary_audience || result.allGroups.length > 0) && (
-                  <div className="mt-7 grid grid-cols-1 gap-4 md:grid-cols-3">
-                    {[
-                      { t: "Primary Audience", c: payload?.primary_audience, g: result.allGroups[0], d: "Strongest matched audience" },
-                      { t: "Expansion Audience", c: payload?.expansion_audience, g: result.allGroups[1] || result.allGroups[0], d: "Related high-scale audience" },
-                      { t: "Precision Audience", c: payload?.precision_audience, g: result.allGroups[result.allGroups.length - 1], d: "Smaller, higher-confidence audience" },
-                    ].map((x) => {
-                      const label = x.c?.audience_signal || x.g?.label || "—";
-                      const vol = Number(x.c?.scale ?? x.g?.volume ?? 0);
-                      const src = x.c?.partner_sources || x.g?.partners?.join(", ") || "";
-                      return (
-                        <div key={x.t} className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-indigo-600">{x.t}</div>
-                          <div className="mt-1 truncate text-sm font-medium text-slate-800">{label}</div>
-                          <div className="mt-2 text-2xl font-bold">{fmt(vol)}</div>
-                          <div className="mt-1 text-xs text-slate-500">{src || x.d}</div>
-                        </div>
-                      );
-                    })}
+                {result.groups.length > 0 && result.groups.every((g) => disabledSignalIds.includes(g.key)) && !extraSignalIds.length && (
+                  <div className="mt-3 rounded-xl bg-amber-50 px-4 py-2 text-sm text-amber-800">Tick at least one signal.</div>
+                )}
+
+                {Array.isArray(payload?.suggested_signals) && payload.suggested_signals.length > 0 && (
+                  <div className="mt-7 rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-5">
+                    <div className="text-sm font-semibold text-slate-700">Expand selection</div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Similar catalog signals that are not in the matched table. Tick one to add its people to the scale.
+                    </p>
+                    <div className="mt-4 space-y-2">
+                      {payload.suggested_signals.map((s: any) => {
+                        const on = extraSignalIds.includes(s.master_signal_id);
+                        return (
+                          <label
+                            key={s.master_signal_id}
+                            className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 transition ${
+                              on ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-white hover:border-indigo-300"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={() => toggleSuggestion(s.master_signal_id)}
+                              className="h-4 w-4 accent-indigo-600"
+                            />
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{s.audience_signal}</span>
+                            <span className="hidden text-xs text-slate-500 sm:block">{s.partner_sources}</span>
+                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              s.klass === "Actual" ? "bg-indigo-50 text-indigo-700" : "bg-violet-50 text-violet-700"
+                            }`}>
+                              {s.klass === "Actual" ? "Purchase" : "Interest"}
+                            </span>
+                            <span className="w-20 text-right text-sm font-semibold text-slate-800">{fmt(Number(s.scale) || 0)}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
+
 
               </div>
 

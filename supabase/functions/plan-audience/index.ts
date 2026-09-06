@@ -238,8 +238,12 @@ serve(async (req) => {
       });
     }
 
-    const ENGINE_VERSION = "v9-cube-only-monotonic-filters";
-    const irHash = await sha256(ENGINE_VERSION + JSON.stringify(ir) + JSON.stringify(body.baseline ?? null));
+    const ENGINE_VERSION = "v10-family-gated-retrieval";
+    const evidence: "actual" | "intent" | null =
+      body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
+    const irHash = await sha256(
+      ENGINE_VERSION + JSON.stringify(ir) + JSON.stringify(body.baseline ?? null) + String(evidence),
+    );
     const cached = await sb.from("result_cache").select("payload").eq("query_ir_hash", irHash).maybeSingle();
     if (cached.data?.payload) {
       return new Response(JSON.stringify({ ...cached.data.payload, source, cached: true }), {
@@ -247,7 +251,7 @@ serve(async (req) => {
       });
     }
 
-    const payload = await plan(sb, ir, body.baseline ?? null);
+    const payload = await plan(sb, ir, body.baseline ?? null, evidence);
     await sb.from("result_cache").upsert({ query_ir_hash: irHash, query_ir: ir, payload });
     return new Response(JSON.stringify({ ...payload, source, cached: false }), {
       headers: { ...CORS, "Content-Type": "application/json" },
@@ -622,7 +626,7 @@ function card(rows: Hit[], pick: "top" | "tight") {
 /* --------------------------------- plan --------------------------------- */
 type Baseline = { people_reach?: number; actual_people?: number; intent_people?: number } | null;
 
-async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null) {
+async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evidence: "actual" | "intent" | null = null) {
   await loadFamilyVocab(sb);
   let geos = ir.dimensions.geo_tier || [];
 
@@ -647,7 +651,10 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null) {
 
   for (const a of anchors) {
     const others = PLATFORM_RE.test(a.canonical) ? productFamilies : [];
-    const { hits, contextHits, isPlatform, scale } = await matchAnchor(sb, a, mods, others);
+    const m = await matchAnchor(sb, a, mods, others);
+    const { contextHits, isPlatform, scale } = m;
+    // Evidence toggle: restrict the whole page (headline, splits, table) to one class.
+    const hits = evidence ? m.hits.filter((h) => h.cls === evidence) : m.hits;
     // Every downstream metric uses the same post-modifier list shown in the table.
     // contextHits are retained only for diagnostics and must never enter scoring or slicing.
     const ids = [...new Set(hits.map((h) => h.master_signal_id))];
@@ -805,8 +812,8 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null) {
       actualPeople *= k;
       intentPeople *= k;
     }
-    if (Number(baseline.actual_people) >= 0) actualPeople = Math.min(actualPeople, Number(baseline.actual_people));
-    if (Number(baseline.intent_people) >= 0) intentPeople = Math.min(intentPeople, Number(baseline.intent_people));
+    if (!evidence && Number(baseline.actual_people) >= 0) actualPeople = Math.min(actualPeople, Number(baseline.actual_people));
+    if (!evidence && Number(baseline.intent_people) >= 0) intentPeople = Math.min(intentPeople, Number(baseline.intent_people));
   }
 
   const geo_split = Object.entries(mix.geo).map(([k, sh]) => ({ geo_tier: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
@@ -818,6 +825,7 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null) {
     base_cohort: anchors.map((a) => title(a.canonical)).join(` ${ir.join} `) || "—",
     modifier_line: modLine,
     dimension_line: dimBits.length ? dimBits.join(" · ") : "none",
+    evidence,
     people_reach: Math.round(peopleCapped),
     actual_people: Math.round(actualPeople),
     intent_people: Math.round(intentPeople),

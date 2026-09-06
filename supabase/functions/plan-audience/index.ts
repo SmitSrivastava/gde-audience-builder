@@ -904,20 +904,22 @@ async function plan(
       exclusions: ir.exclusions || [],
       modifiers: mods,
       rules: [
-        `Anchors: ${anchors.map((a) => title(a.canonical)).join(` ${ir.join} `)}`,
-        `Purchase-backed people counted in full: ${Math.round(actualPeople).toLocaleString("en-IN")} · interest-backed people counted in full: ${Math.round(intentPeople).toLocaleString("en-IN")}`,
-        `Total, purchase and interest each use the same Boolean equation independently: ${Math.round(people).toLocaleString("en-IN")} total`,
-        ...(classFallback.length ? [`${classFallback.join(" and ")} had no rows on one side of the join, so it is counted across the audiences that do carry it.`] : []),
-
-
-        anchors.length < 2
-          ? "Single anchor: people counted once after phone/device de-duplication and partner overlap."
-          : ir.join === "AND"
-          ? "Two or more anchors combined as an intersection A ∩ B."
-          : "Two or more anchors combined as A + B − the exact same A ∩ B used by AND.",
-        ...(exclusionLabel.length ? [`Excludes overlap with ${exclusionLabel.join(" and ")}`] : []),
-        `${liveHits.length} of ${tableByAnchor.flat().length} table signals in the scale${extra.size ? ` plus ${extra.size} added from expand selection` : ""}`,
+        `Your request was read as: ${baseCohort}`,
+        `Focus applied: ${modLine}${dimBits.length ? ` · audience filters: ${dimBits.join(", ")}` : ""}`,
+        `Matched against the partner catalogue: ${tableByAnchor.flat().length} audience signals found across ${
+          [...new Set(evidenceHits.map((h) => h.partner_name))].length
+        } data partners`,
+        `${liveHits.length} signals are counted in the audience shown${extra.size ? `, including ${extra.size} you added from expand selection` : ""}`,
+        `Evidence mix: ${Math.round(actualPeople).toLocaleString("en-IN")} purchase-backed and ${
+          Math.round(intentPeople).toLocaleString("en-IN")
+        } interest-backed people`,
+        ...(classFallback.length
+          ? [`${classFallback.join(" and ")} evidence is not carried by every matched audience, so it is reported from the audiences that do carry it.`]
+          : []),
+        ...(exclusionLabel.length ? [`People also present in ${exclusionLabel.join(" and ")} are removed.`] : []),
+        `People are de-duplicated across partners before the reach is shown.`,
       ],
+
     },
   };
 }

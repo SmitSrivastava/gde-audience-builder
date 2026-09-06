@@ -12,3 +12,6 @@ verify_jwt = false
 [functions.plan-chat]
 verify_jwt = false
 
+
+[functions.audience-strategy]
+verify_jwt = false

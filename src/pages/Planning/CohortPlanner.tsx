@@ -257,6 +257,8 @@ export default function CohortPlanner() {
   const [planError, setPlanError] = useState<string | null>(null);
   const [chips, setChips] = useState<string[]>(EXAMPLES);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Evidence toggle: restricts the whole page to purchase-backed or interest-backed people.
+  const [evidence, setEvidence] = useState<"actual" | "intent" | null>(null);
 
   useEffect(() => {
     supabase.from("seed_chip").select("chip_label").then(({ data }) => {
@@ -324,6 +326,7 @@ export default function CohortPlanner() {
     setPlanning(true);
     setPlanError(null);
     setFilters({ geo_tier: [], age_bucket: [], gender_bucket: [] });
+    setEvidence(null);
     try {
       const { data, error } = await supabase.functions.invoke("plan-audience", { body: { brief: q } });
       if (error) throw error;
@@ -349,8 +352,9 @@ export default function CohortPlanner() {
   };
 
   /* Re-slice the same reading of the brief with the page filters. No re-parse. */
-  const applyFilters = async (next: Filters) => {
+  const applyFilters = async (next: Filters, nextEvidence: "actual" | "intent" | null = evidence) => {
     setFilters(next);
+    setEvidence(nextEvidence);
     const base = basePayload || payload;
     if (!base?.query_ir) return;
     setPlanning(true);
@@ -359,6 +363,7 @@ export default function CohortPlanner() {
         body: {
           query_ir: base.query_ir,
           filters: next,
+          evidence: nextEvidence,
           baseline: {
             people_reach: base.people_reach,
             actual_people: base.actual_people,
@@ -551,16 +556,36 @@ export default function CohortPlanner() {
 
                 {payload && (
                   <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+                    <button
+                      type="button"
+                      onClick={() => applyFilters(filters, evidence === "actual" ? null : "actual")}
+                      className={`rounded-2xl border p-4 text-left transition ${
+                        evidence === "actual"
+                          ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200"
+                          : "border-indigo-100 bg-indigo-50/60 hover:border-indigo-300"
+                      }`}
+                    >
                       <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-500">Purchase-backed people</div>
                       <div className="mt-1 text-2xl font-bold text-slate-900">{fmt(Number(payload.actual_people) || 0)}</div>
-                      <div className="mt-1 text-xs text-slate-500">Seen buying or transacting</div>
-                    </div>
-                    <div className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
+                      <div className="mt-1 text-xs text-slate-500">
+                        {evidence === "actual" ? "Filtering the page · click to clear" : "Seen buying or transacting"}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyFilters(filters, evidence === "intent" ? null : "intent")}
+                      className={`rounded-2xl border p-4 text-left transition ${
+                        evidence === "intent"
+                          ? "border-violet-500 bg-violet-50 ring-2 ring-violet-200"
+                          : "border-violet-100 bg-violet-50/60 hover:border-violet-300"
+                      }`}
+                    >
                       <div className="text-[11px] font-semibold uppercase tracking-wide text-violet-500">Interest-backed people</div>
                       <div className="mt-1 text-2xl font-bold text-slate-900">{fmt(Number(payload.intent_people) || 0)}</div>
-                      <div className="mt-1 text-xs text-slate-500">Showing interest or affinity</div>
-                    </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {evidence === "intent" ? "Filtering the page · click to clear" : "Showing interest or affinity"}
+                      </div>
+                    </button>
                   </div>
                 )}
 

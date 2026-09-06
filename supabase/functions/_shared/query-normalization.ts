@@ -88,6 +88,7 @@ export function semanticIrKey(ir: Record<string, unknown>): string {
         canonical: canonicalAnchor(String(anchor.canonical || "")),
         family: String(anchor.family || "").toLowerCase().trim(),
         role: index === 0 ? "primary" : (ir.join === "AND" ? "and" : "or"),
+        tokens: [canonicalAnchor(String(anchor.canonical || ""))].filter(Boolean),
       };
     }),
     modifiers: modifiers.map((raw: unknown) => {

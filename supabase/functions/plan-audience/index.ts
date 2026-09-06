@@ -770,9 +770,8 @@ async function plan(
       intentPeople = subtractAudience(intentPeople, xIntent, population, rho);
     }
   }
-  // Purchase and interest are overlapping subsets of the same de-duplicated people.
-  actualPeople = Math.min(actualPeople, people);
-  intentPeople = Math.min(intentPeople, people);
+  // Headline is the union of the two complete class counts: never below the larger, never above the sum.
+  people = reconcileUnion(people, actualPeople, intentPeople);
 
   const liveHits = scored.flatMap((s) => s.live);
   const evidenceHits = evidence ? liveHits.filter((h) => h.cls === evidence) : liveHits;
@@ -787,14 +786,16 @@ async function plan(
 
   // Invariant: a narrowed audience can never exceed the unfiltered one.
   if (baseline && Number(baseline.people_reach) > 0 && filtered) {
-    people = Math.min(people, Number(baseline.people_reach) * keepShare);
+    const ceiling = Number(baseline.people_reach) * keepShare;
+    ({ total: people, actual: actualPeople, intent: intentPeople } = capParts(people, actualPeople, intentPeople, ceiling));
     actualPeople = Math.min(actualPeople, Number(baseline.actual_people || 0) * keepShare);
     intentPeople = Math.min(intentPeople, Number(baseline.intent_people || 0) * keepShare);
+    people = reconcileUnion(people, actualPeople, intentPeople);
   }
 
-  people = Math.max(0, Math.min(people, cap));
-  actualPeople = Math.min(actualPeople, people);
-  intentPeople = Math.min(intentPeople, people);
+  ({ total: people, actual: actualPeople, intent: intentPeople } = capParts(people, actualPeople, intentPeople, cap));
+  people = Math.max(0, reconcileUnion(people, actualPeople, intentPeople));
+
 
   // The evidence toggle is a subset of the same result, never a new calculation.
   const headline = evidence === "actual" ? actualPeople : evidence === "intent" ? intentPeople : people;

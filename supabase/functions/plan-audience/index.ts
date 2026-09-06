@@ -81,13 +81,28 @@ async function loadFamilyVocab(sb: SupabaseClient) {
   }
   FAMILY_VOCAB = map;
 }
+// Retrieval text is built from the RESOLVED audience only. The user's leftover words
+// never steer the vector search, so two phrasings of one intent retrieve the same set.
 function anchorQueryText(anchor: Anchor) {
   const fam = String(anchor.family || "").toLowerCase();
   const canon = FAMILY_VOCAB[fam] || [];
-  const own = [anchor.canonical, ...anchor.tokens].map(cleanPhrase).filter(Boolean);
-  const words = [...new Set([...canon, ...own])];
+  const own = [anchor.canonical].map(cleanPhrase).filter(Boolean);
+  const words = [...new Set([...canon, ...own])].sort();
   return (words.join(" ") || cleanPhrase(anchor.canonical) || anchor.canonical).trim();
 }
+// A candidate may only enter an audience if it actually belongs to the resolved family
+// (or literally names the audience). This replaces "closest 60 wins".
+function belongsToFamily(r: any, anchor: Anchor) {
+  const fam = String(anchor.family || "").toLowerCase();
+  if (!fam) return true;
+  const fams = String(r.product_families || "").toLowerCase().split(/[,|]/).map((s: string) => s.trim());
+  if (fams.includes(fam)) return true;
+  const famWords = (FAMILY_VOCAB[fam] || []).concat(cleanPhrase(fam.replace(/_/g, " ")));
+  const text = squash(`${r.signal} ${r.category} ${r.sub_category}`);
+  const probes = [...new Set([...famWords, cleanPhrase(anchor.canonical)])].filter((w) => w && w.length >= 4);
+  return probes.some((w) => text.includes(squash(w)));
+}
+
 
 
 /* ---------------- deterministic fallback parser (only if Vertex is down) ---------------- */

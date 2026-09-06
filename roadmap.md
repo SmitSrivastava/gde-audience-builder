@@ -8,9 +8,8 @@
 - [x] Reconcile purchase-backed and interest-backed totals
 - [x] Add Boolean regression coverage and deploy fresh cache versions
 - [x] Verify repeated live planner scenarios and page controls
-- [ ] Collapse matched rows into unique purchase and interest audiences per anchor
-- [ ] Keep headline purchase-only and show interest separately
-- [ ] Apply AND/OR once to the collapsed anchor populations
-- [ ] Make row cards and checklist recalculation use reliability-adjusted people
-- [ ] Verify U1–U4 against the live planner- [x] Headline = union of full purchase and full interest counts (never > sum, never < larger)
-- [ ] Verify live: skincare AND suv, party AND/OR/excluding dineout, filters and evidence toggles
+- [x] Keep each anchor's A and B populations identical in standalone and combined queries
+- [x] Use AND as the sole overlap source for total, purchase, and interest independently
+- [x] Derive OR exactly as A + B - AND and NOT exactly as A - AND
+- [x] Add executable validation for every requested Boolean invariant
+- [x] Verify live: Party, Dineout, AND, OR, NOT, plus purchase and interest values

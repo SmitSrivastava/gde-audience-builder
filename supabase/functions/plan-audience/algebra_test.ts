@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { boundedIntersection, boundedUnion, capParts, reconcileReach, reconcileUnion, selectEvidence, subtractAudience } from "../_shared/audience-algebra.ts";
+import { assertBooleanReach, booleanReach, boundedIntersection, boundedUnion, capParts, reconcileReach, reconcileUnion, selectEvidence, subtractAudience, unionFromIntersection } from "../_shared/audience-algebra.ts";
 
 Deno.test("Boolean reach obeys ordering and population bounds", () => {
   const andReach = boundedIntersection(300, 200, 1000, 0.25);
@@ -7,6 +7,27 @@ Deno.test("Boolean reach obeys ordering and population bounds", () => {
   assertEquals(andReach, 50);
   assertEquals(orReach, 450);
   assertEquals(orReach >= 300 && 300 >= andReach, true);
+});
+
+Deno.test("AND is the single source of truth for OR and NOT", () => {
+  const result = booleanReach(300, 200, 1000, 0.25);
+  assertEquals(result.intersection, 50);
+  assertEquals(result.union, 300 + 200 - result.intersection);
+  assertEquals(result.difference, 300 - result.intersection);
+  assertEquals(result.intersection <= Math.min(result.left, result.right), true);
+  assertEquals(result.union >= Math.max(result.left, result.right), true);
+  assertEquals(result.union <= result.left + result.right, true);
+  assertEquals(result.difference >= 0, true);
+  assertEquals(unionFromIntersection(300, 200, result.intersection), result.union);
+  assertBooleanReach(result);
+});
+
+Deno.test("the exact algebra is identical for total, purchase and interest", () => {
+  for (const [a, b] of [[800, 500], [320, 210], [480, 290]]) {
+    const result = booleanReach(a, b, 2000, 0.4);
+    assertEquals(result.union, a + b - result.intersection);
+    assertEquals(result.difference, a - result.intersection);
+  }
 });
 
 Deno.test("evidence classes reconcile exactly to total", () => {

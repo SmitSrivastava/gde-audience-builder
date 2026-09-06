@@ -55,6 +55,7 @@ export function normalizeAudienceBrief(input: string): string {
   }
   value = value
     .replace(/\s+/g, " ")
+    .trim()
     .replace(/(?:__and__\s*){2,}/g, "__and__ ")
     .replace(/(?:__or__\s*){2,}/g, "__or__ ")
     .replace(/^(?:__and__|__or__)\s+|\s+(?:__and__|__or__)$/g, "")

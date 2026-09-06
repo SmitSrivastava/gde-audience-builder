@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { normalizeAudienceBrief } from "../_shared/query-normalization.ts";
+import { normalizeAudienceBrief, semanticIrKey } from "../_shared/query-normalization.ts";
 
 const wrappers = ["people", "users", "audience", "cohort", "segment", "consumers", "customers", "folks", "individuals", "personas"];
 const joins = ["and", "and also", "along with", "together with", "combined with"];
@@ -28,4 +28,20 @@ Deno.test("keeps exclusions and true Boolean operators", () => {
   assertEquals(normalizeAudienceBrief("users who like party but not dineout"), "party NOT dine out");
   assertEquals(normalizeAudienceBrief("party excluding dineout"), "party NOT dine out");
   assertEquals(normalizeAudienceBrief("party or dineout"), "party OR dine out");
+  assertEquals(normalizeAudienceBrief("either party or dineout"), "party OR dine out");
+});
+
+Deno.test("semantic identity separates AND, OR, and exclusions", () => {
+  const base = {
+    anchors: [
+      { canonical: "party", family: "entertainment" },
+      { canonical: "dineout", family: "dining" },
+    ],
+    modifiers: [], dimensions: {}, mode: "expected", refuse: { flag: false, reason: null },
+  };
+  const andKey = semanticIrKey({ ...base, join: "AND", exclusions: [] });
+  const orKey = semanticIrKey({ ...base, join: "OR", exclusions: [] });
+  const notKey = semanticIrKey({ ...base, anchors: base.anchors.slice(0, 1), join: "OR", exclusions: ["dine out"] });
+  assertEquals(andKey === orKey, false);
+  assertEquals(orKey === notKey, false);
 });

@@ -6,6 +6,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { CORS, embed } from "../_shared/vertex.ts";
 import { canonicalAnchor, semanticIrKey } from "../_shared/query-normalization.ts";
+import { boundedIntersection, boundedUnion, reconcileReach, selectEvidence, subtractAudience } from "../_shared/audience-algebra.ts";
 
 function normBrief(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9+]+/g, " ").replace(/\s+/g, " ").trim();
@@ -227,7 +228,7 @@ serve(async (req) => {
     }
 
     ir = JSON.parse(semanticIrKey(ir)) as IR;
-    const ENGINE_VERSION = "v12-semantic-query-ir";
+const ENGINE_VERSION = "v15-boolean-labels";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
     const irHash = await sha256(
@@ -502,6 +503,28 @@ async function unionPeople(sb: SupabaseClient, rows: Hit[], shareMap: Record<str
   return reach;
 }
 
+async function pairRho(sb: SupabaseClient, familyA: string, familyB: string) {
+  const { data } = await sb.from("and_intersect_rho").select("rho_and_expected")
+    .or(`and(family_a.eq.${familyA},family_b.eq.${familyB}),and(family_a.eq.${familyB},family_b.eq.${familyA})`);
+  return data?.[0] ? Number(data[0].rho_and_expected) : (familyA === familyB ? 0.75 : 0.12);
+}
+
+async function exclusionAnchors(sb: SupabaseClient, exclusions: string[]): Promise<Anchor[]> {
+  if (!exclusions.length) return [];
+  const { data } = await sb.from("synonym").select("token, family").eq("role", "anchor");
+  return exclusions.map((value, index) => {
+    const canonical = canonicalAnchor(value);
+    const exact = (data || []).find((row: any) => canonicalAnchor(String(row.token)) === canonical);
+    return {
+      id: `x${index + 1}`,
+      canonical,
+      family: String(exact?.family || "").toLowerCase(),
+      role: "exclude",
+      tokens: [canonical],
+    };
+  }).filter((anchor) => anchor.canonical);
+}
+
 async function platformUniverse(sb: SupabaseClient, geos: string[], ages: string[], genders: string[], above: number | null) {
   const { data: uni } = await sb.from("partner_universe").select("*").eq("partner_name", "Zepto");
   const total = Math.max(0, ...(uni || []).map((u: any) => Number(u.universe)));
@@ -624,8 +647,9 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
     const others = PLATFORM_RE.test(a.canonical) ? productFamilies : [];
     const m = await matchAnchor(sb, a, mods, others);
     const { contextHits, isPlatform, scale } = m;
-    // Evidence toggle: restrict the whole page (headline, splits, table) to one class.
-    const hits = evidence ? m.hits.filter((h) => h.cls === evidence) : m.hits;
+    // Score the complete anchor once. Evidence is selected only after Boolean algebra,
+    // so purchase-backed and interest-backed remain mutually exclusive partitions.
+    const hits = m.hits;
     // Every downstream metric uses the same post-modifier list shown in the table.
     // contextHits are retained only for diagnostics and must never enter scoring or slicing.
     const ids = [...new Set(hits.map((h) => h.master_signal_id))];
@@ -647,58 +671,46 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
     scored.push({ anchor: a, hits, contextHits, actual, intent: intent * scale, isPlatform, ids });
   }
 
-  const platformAnd = ir.join === "AND" && scored.length >= 2 && scored.some((s) => s.isPlatform);
-
   let people = 0;
   let actualPeople = 0;
   let intentPeople = 0;
   if (!scored.length) {
     people = 0;
-  } else if (platformAnd) {
-    // Platform x family: the platform's own rows in that family already ARE the intersection.
-    const p = scored.find((s) => s.isPlatform);
-    if (p) {
-      people = p.actual || p.intent;
-      actualPeople = p.actual;
-      intentPeople = Math.max(0, people - actualPeople);
-    }
-  } else if (ir.join === "AND" && scored.length >= 2) {
-    const A = scored[0], B = scored[1];
-    const { data } = await sb.from("and_intersect_rho").select("*")
-      .or(`and(family_a.eq.${A.anchor.family},family_b.eq.${B.anchor.family}),and(family_a.eq.${B.anchor.family},family_b.eq.${A.anchor.family})`);
-    const rho = data?.[0] ? Number(data[0].rho_and_expected) : (A.anchor.family === B.anchor.family ? 0.75 : 0.12);
-    // The overlap between two audiences is a property of the whole population, not of
-    // the slice being viewed. Using the narrowed population here would inflate the
-    // overlap floor and make a filtered audience larger than the unfiltered one.
-    const pop = await popSlice(sb, [], [], [], null);
-    // Join the complete post-modifier audience on each side. Classification-specific
-    // KPIs are calculated separately below and never borrow an unfiltered fallback.
-    const a = A.actual + A.intent, b = B.actual + B.intent;
-    const lower = Math.max(0, a + b - pop);
-    const upper = Math.min(a, b);
-    people = lower + rho * (upper - lower);
-    const joinClass = (left: number, right: number) => {
-      if (left <= 0 || right <= 0) return 0;
-      const classLower = Math.max(0, left + right - pop);
-      return classLower + rho * (Math.min(left, right) - classLower);
-    };
-    actualPeople = joinClass(A.actual, B.actual);
-    // A joined audience is purchase-backed only where every side has purchase evidence.
-    // Any remaining joined reach is interest-backed, including purchase × affinity joins.
-    intentPeople = Math.max(0, people - actualPeople);
   } else {
-    const allActual = scored.flatMap((s) => s.hits.filter((h) => h.cls === "actual"));
-    const allIntent = scored.flatMap((s) => s.hits.filter((h) => h.cls === "intent"));
-    const allIds = scored.flatMap((s) => s.ids);
-    const shareMap = await sliceShares(sb, allIds, geos, ages, genders, above);
-    people = scored.some((s) => s.isPlatform)
-      ? Math.max(...scored.map((s) => s.actual))
-      : await unionPeople(sb, allActual, shareMap, ir.mode);
-    actualPeople = people;
-    intentPeople = await unionPeople(sb, allIntent, shareMap, ir.mode);
+    const pop = await popSlice(sb, [], [], [], null);
+    people = scored[0].actual + scored[0].intent;
+    actualPeople = scored[0].actual;
+    let family = scored[0].anchor.family;
+    for (const current of scored.slice(1)) {
+      const rho = await pairRho(sb, family, current.anchor.family);
+      const total = current.actual + current.intent;
+      if (ir.join === "AND") {
+        people = boundedIntersection(people, total, pop, rho);
+        actualPeople = boundedIntersection(actualPeople, current.actual, pop, rho);
+      } else {
+        people = boundedUnion(people, total, pop, rho);
+        actualPeople = boundedUnion(actualPeople, current.actual, pop, rho);
+      }
+      family = current.anchor.family;
+    }
+
+    for (const excluded of await exclusionAnchors(sb, ir.exclusions || [])) {
+      const matched = await matchAnchor(sb, excluded, [], []);
+      const ids = [...new Set(matched.hits.map((hit) => hit.master_signal_id))];
+      const shares = await sliceShares(sb, ids, geos, ages, genders, above);
+      const excludedActual = await unionPeople(sb, matched.hits.filter((hit) => hit.cls === "actual"), shares, ir.mode);
+      const excludedIntent = await unionPeople(sb, matched.hits.filter((hit) => hit.cls === "intent"), shares, ir.mode);
+      const rho = await pairRho(sb, family, excluded.family);
+      people = subtractAudience(people, excludedActual + excludedIntent, pop, rho);
+      actualPeople = subtractAudience(actualPeople, excludedActual, pop, rho);
+    }
+    const parts = reconcileReach(people, actualPeople);
+    people = parts.total;
+    actualPeople = parts.actual;
+    intentPeople = parts.intent;
   }
 
-  const allHits = scored.flatMap((s) => s.hits);
+  const allHits = scored.flatMap((s) => s.hits).filter((hit) => !evidence || hit.cls === evidence);
   const allIds = [...new Set(allHits.map((h) => h.master_signal_id))];
   const volOf: Record<string, number> = {};
   for (const h of allHits) volOf[h.master_signal_id] = Number(h.volume || 0) * Number(h.reliability || 1);
@@ -715,7 +727,7 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
   const picked: Hit[] = [];
   const pickedIds = new Set<string>();
   for (const s of scored) {
-    const list = [...s.hits].sort((a, b) => b.volume - a.volume);
+    const list = s.hits.filter((hit) => !evidence || hit.cls === evidence).sort((a, b) => b.volume - a.volume);
     let n = 0;
     for (const r of list) {
       if (pickedIds.has(r.master_signal_id)) continue;
@@ -740,9 +752,10 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
       master_signal_id: r.master_signal_id,
     }));
 
-  const primaryRows = scored[0]?.hits.filter((h) => h.cls === "actual") || [];
-  const primary = card(primaryRows.length ? primaryRows : scored[0]?.hits || [], "top");
-  const expansionRows = scored[1]?.hits || (scored[0]?.hits.filter((h) => h.cls === "intent") ?? []);
+  const primaryPool = scored[0]?.hits.filter((hit) => !evidence || hit.cls === evidence) || [];
+  const primaryRows = primaryPool.filter((h) => h.cls === "actual");
+  const primary = card(primaryRows.length ? primaryRows : primaryPool, "top");
+  const expansionRows = scored[1]?.hits.filter((hit) => !evidence || hit.cls === evidence) || primaryPool.filter((h) => h.cls === "intent");
   const expansion = card(expansionRows, "top");
   const modTokens = mods.map((m) => squash(m.token));
   const precisionRows = allHits.filter((h) => modTokens.some((t) => t && squash(`${h.signal} ${h.sub_category}`).includes(t)));
@@ -763,14 +776,21 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
     above != null ? `Above ${above}` : null,
   ].filter(Boolean);
 
-  actualPeople = Math.max(0, Math.min(actualPeople, peopleCapped));
-  intentPeople = Math.max(0, Math.min(intentPeople, peopleCapped));
+  let selected = selectEvidence(reconcileReach(peopleCapped, actualPeople), evidence);
+  peopleCapped = selected.total;
+  actualPeople = selected.actual;
+  intentPeople = selected.intent;
 
   // Invariant: a narrowed audience can never exceed the unfiltered one.
   if (baseline && Number(baseline.people_reach) > 0) {
     // Filtering is a restriction of the unfiltered audience by its cube share, so the
     // parts always add back up to the whole.
-    const capTotal = Number(baseline.people_reach) * keepShare;
+    const baselineReach = evidence === "actual"
+      ? Number(baseline.actual_people || 0)
+      : evidence === "intent"
+      ? Number(baseline.intent_people || 0)
+      : Number(baseline.people_reach);
+    const capTotal = baselineReach * keepShare;
     if (filtered && capTotal > 0) {
       const k0 = capTotal / (peopleCapped || capTotal);
       peopleCapped = capTotal;
@@ -787,13 +807,21 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
     if (!evidence && Number(baseline.intent_people) >= 0) intentPeople = Math.min(intentPeople, Number(baseline.intent_people));
   }
 
+  selected = selectEvidence(reconcileReach(peopleCapped, actualPeople), evidence);
+  peopleCapped = selected.total;
+  actualPeople = selected.actual;
+  intentPeople = selected.intent;
+
   const geo_split = Object.entries(mix.geo).map(([k, sh]) => ({ geo_tier: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
   const age_split = Object.entries(mix.age).map(([k, sh]) => ({ age_bucket: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
   const gender_split = Object.entries(mix.gen).map(([k, sh]) => ({ gender_bucket: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
+  const includedLabel = anchors.map((a) => title(a.canonical)).join(` ${ir.join} `) || "—";
+  const exclusionLabel = (ir.exclusions || []).map((value) => title(canonicalAnchor(value))).filter(Boolean);
+  const baseCohort = exclusionLabel.length ? `${includedLabel} EXCLUDING ${exclusionLabel.join(" AND ")}` : includedLabel;
 
   return {
     query_ir: ir,
-    base_cohort: anchors.map((a) => title(a.canonical)).join(` ${ir.join} `) || "—",
+    base_cohort: baseCohort,
     modifier_line: modLine,
     dimension_line: dimBits.length ? dimBits.join(" · ") : "none",
     evidence,
@@ -817,11 +845,13 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
     how_built: {
       join: ir.join,
       anchors: anchors.map((a) => a.canonical),
+      exclusions: ir.exclusions || [],
       modifiers: mods,
       rules: [
         "Built from relevant partner audience signals",
         "Each qualifier is applied to the audience it describes",
         ir.join === "AND" ? "Includes people who meet every selected audience condition" : "Includes people who meet any selected audience condition",
+        ...(exclusionLabel.length ? [`Excludes overlap with ${exclusionLabel.join(" and ")}`] : []),
         "Presented as a unified addressable audience",
       ],
     },

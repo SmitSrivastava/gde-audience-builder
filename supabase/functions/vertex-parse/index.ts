@@ -43,6 +43,7 @@ H9. NEVER output a number, volume or partner name (unless the user named it).
 H10. If the brief contains "and" plus two product nouns you MUST emit two anchors. Never collapse to one.
 H11. The input has already had conversational filler removed. Only retain anchors, modifiers, dimensions, Boolean operators and exclusions. Never put filler into canonical names or tokens.
 H12. exclusions contains canonical concepts following NOT, excluding, without or except. Exclusions are never positive anchors.
+H13. For two nouns joined by OR/either, emit both anchors and join=OR. Never collapse either side.
 
 FILLER CONTRACT
 Drop audience wrappers (people, users, audience, cohort, segment, consumers, customers, folks, individuals, personas, profiles, population), relative/person words (who, that, which, those, these, someone, anyone, everyone), generic intent verbs (like, love, prefer, interested in, likely to, looking for, want, need, use, consume, engage with), generic behaviour phrases (go for, go out for, visit for, spend time on, hang out, are into, based on, related to, associated with, affinity for), planning/request filler (find, show, give, get, create, build, identify, discover, search, estimate, calculate, size, audience size, scale, reach, target, planning, campaign, media, activation), and grammar filler (the, a, an, for, to, of, in, on, at, by, from, with, as, is, are, was, were, be, being, been, have, also).
@@ -59,6 +60,8 @@ FEW-SHOTS
 "quick commerce snack buyer" → join AND; a1 "quick commerce" (grocery_retail, primary), a2 "snacks" (snacks, and); no modifier.
 "premium chocolate female above 25" → one anchor a1 "chocolate" family sweets; modifier premium applies_to ["a1"]; dimensions gender_bucket ["Female"], above_age 25.
 "party people and dineout folks", "party and dineout", "people who party and go out for dineout", and "users who like partying and dine out" → the identical result: join AND; a1 canonical "party" family entertainment; a2 canonical "dine out" family dining.
+"party or dineout" and "either party or dineout" → the identical result: join OR; a1 canonical "party" family entertainment role primary; a2 canonical "dine out" family dining role or.
+"party excluding dineout" → join OR; a1 canonical "party" family entertainment; exclusions ["dine out"].
 
 KNOWN FAMILIES
 sweets, ice_cream, bakery, snacks, biscuits, beverages_cold, beverages_hot, dairy, staples, fruits_veg, meat, packaged_food, baby, pet, beauty, personal_care, pharma, fitness, apparel, jewellery, electronics, appliances, home, auto, education, payments, grocery_retail, dining, travel, entertainment, finance, real_estate, agri, construction, industrial, toys, stationery, sexual_wellness, paan, luxury, fuel, utility`;
@@ -225,7 +228,7 @@ serve(async (req) => {
     if (!n) {
       return new Response(JSON.stringify({ error: "brief has no audience concepts" }), { status: 400, headers: CORS });
     }
-    const PARSER_VERSION = "semantic-v2";
+    const PARSER_VERSION = "semantic-v3-boolean";
     const h = await sha256(`${PARSER_VERSION}:${n}`);
 
     const cached = await sb.from("query_cache").select("query_ir, source").eq("brief_norm_hash", h).maybeSingle();
@@ -246,17 +249,20 @@ serve(async (req) => {
 
     let ir = await callVertex(token, n);
     const wantsAnd = /\bAND\b/.test(n);
-    if (wantsAnd && (ir.anchors || []).length < 2 && !ir.refuse?.flag) {
+    const wantsOr = /\bOR\b/.test(n);
+    const wantsMultiple = wantsAnd || wantsOr;
+    if (wantsMultiple && (ir.anchors || []).length < 2 && !ir.refuse?.flag) {
       ir = await callVertex(
         token,
         n,
-        "The brief joins two product nouns with and/plus. You MUST emit two anchors with join=AND, and attach each modifier only to the anchor it modifies.",
+        `The brief joins two product nouns with ${wantsAnd ? "AND" : "OR"}. You MUST emit both anchors with join=${wantsAnd ? "AND" : "OR"}, and attach each modifier only to the anchor it modifies.`,
       );
       if ((ir.anchors || []).length < 2) {
         ir.refuse = { flag: true, reason: "Could not resolve both parts of this brief. Try naming each audience separately." };
       }
     }
     if (wantsAnd && (ir.anchors || []).length >= 2) ir.join = "AND";
+    if (wantsOr && (ir.anchors || []).length >= 2) ir.join = "OR";
 
     // Rebuild the object from its semantic form so model-only variation cannot
     // alter cache identity, retrieval text or downstream sizing.

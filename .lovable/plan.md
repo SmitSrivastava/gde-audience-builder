@@ -1,72 +1,68 @@
-# Fix the zero purchase/interest boxes, then run your 100-query test battery
+# Run all 100 queries first, report every failure, then one single fix
 
-## What your screenshot shows
+No patch-by-patch work. Order is: full test run → complete failure report → one
+consolidated fix → re-run the same 100 queries to prove it clean.
 
-Total 754K, purchase-backed 0, interest-backed 0. Every matched person is
-labelled either purchase-backed or interest-backed, so the two boxes must add
-up to the total. Both being zero is impossible and proves a calculation fault,
-not a data gap.
+## Step 1 — Run the full battery (no code changes)
 
-## Confirmed cause (read from the engine)
+All 100 queries you listed are run live against the real engine, exactly as the
+page calls it. For each query I record:
 
-For an "and" query the engine runs the combine step three separate times: once
-on the total, once on purchase-backed only, once on interest-backed only. Each
-class is combined independently, so if one side of the "and" has no
-purchase-backed rows (luxury cars are interest signals) the purchase result
-collapses to zero; if the other side has no interest-backed rows the interest
-result collapses to zero as well. The total survives because it is computed on
-the full row set. Nothing forces the parts to add back to the whole, and no
-check catches it before the answer is returned.
+- the parsed request (valid or not)
+- anchors detected
+- modifiers detected
+- operator detected: single / and / or / excluding / nested
+- matched-signal count
+- headline reach, purchase-backed, interest-backed
+- planning confidence
+- primary audience, expansion audience
+- geo, age, gender and nested splits (all six nesting orders spot-checked)
+- how-it-was-built trace present
+- whether the run was written to the audit/cache record
 
-A second confirmed gap: the engine returns geo, age and gender splits only.
-There is no nested split (geo inside age inside gender, etc.), so check 9 in
-your list cannot pass today in any nesting order.
+And each is scored against your checks: parse valid, anchors right, modifiers
+right, operator right, matched table not empty where data exists, no false
+zeros, all fields populated, splits reconcile with the headline, same meaning
+in different wording gives the same result (queries 1–3, 11–13, 32–34 etc.),
+"or" ≥ each side ≥ "and", "excluding" ≤ the base, fallback/modifier behaviour
+clearly labelled, suggestions not counted unless ticked.
 
-## The fix
+## Step 2 — The failure report
 
-1. **One person-set, then slice it.** Combine once on the whole audience, then
-   derive purchase-backed and interest-backed as shares of that same result.
-   Each person is attributed to the class of the strongest evidence behind
-   them. The two boxes then always add exactly to the headline, and neither can
-   be zero while the headline is not.
+One table back to you: query, anchors, operator, headline, purchase, interest,
+PASS or the exact check that failed — plus a grouped list of root causes, so you
+can see how many distinct faults there actually are rather than 100 symptoms.
 
-2. **Same rule for and / or / excluding**, for single-anchor queries, for
-   nested Boolean queries, and under every geo, age, gender, above-age and
-   evidence filter.
+Already known and going into that list:
 
-3. **Nested splits.** Add a nested breakdown supporting all six orders (geo →
-   age → gender, geo → gender → age, age → geo → gender, age → gender → geo,
-   gender → geo → age, gender → age → geo), each level adding back to its
-   parent and the top level adding to the headline.
+- **Purchase and interest both showing 0 while the headline is fine.** Cause
+  confirmed in the engine: for an "and" query the combine step runs three
+  separate times — once on the total, once on purchase rows only, once on
+  interest rows only. If one side of the "and" has no purchase rows and the
+  other has no interest rows, both class figures collapse to zero while the
+  total survives. Your suggested behaviour — when a combined class comes out
+  zero, show the per-audience figures instead of a bare 0 — is included in the
+  fix, alongside making the two classes always add back to the headline.
 
-4. **A guard that cannot be skipped.** Before any answer is returned:
-   purchase + interest = total; neither part above the total; total not zero
-   when matched rows exist; every split adds to the total; "or" ≥ each side ≥
-   "and"; "excluding" ≤ the base audience; suggestions excluded unless ticked.
-   A failed check is corrected and recorded, never shipped.
+## Step 3 — One consolidated fix
 
-## Then: the full 100-query battery
+Every root cause from step 2 fixed together in a single pass, plus one guard
+that runs before any answer is returned: purchase + interest = headline; neither
+part above the headline; no zero where matched rows exist; every split adds back
+to the headline; "or" ≥ each side ≥ "and"; "excluding" ≤ the base; suggestions
+excluded unless ticked. A failed check is corrected and recorded, never shipped.
 
-All 100 queries run live against the real engine, each checked on your 14
-points: valid parse, correct anchors, correct modifiers, correct operator
-(single / and / or / excluding / nested), non-empty matched table, non-zero
-result where data exists, every output field populated (reach, confidence,
-matched signals, primary and expansion audience, geo/age/gender/nested splits,
-how-it-was-built trace), splits reconciling, all six nesting orders, wording
-variants giving the identical result, Boolean ordering holding, fallback and
-modifier behaviour clearly labelled, suggestions not silently counted, and the
-query written to the audit/cache record.
+## Step 4 — Re-run the same 100 queries
 
-You get one results table back: query, detected anchors, operator, headline,
-purchase, interest, and PASS or the exact check that failed. Every failure that
-is an engine fault gets fixed and re-run until the battery is clean; anything
-that is genuinely absent from the source data is reported as such rather than
-patched with an invented number.
+Same battery, same table, and I paste the results back. Anything that is
+genuinely absent from the source data is reported as such rather than filled
+with an invented number.
 
 ## Technical notes
 
-Work stays in `supabase/functions/plan-audience/index.ts` (single de-duplicated
-person-set with per-class attribution replacing the three independent folds; new
-nested split builder), `supabase/functions/_shared/audience-algebra.ts` (the
-invariant guard), plus tests and the harness that runs the 100 queries. Engine
-version bumped so cached answers recompute. No page redesign, no data reload.
+Battery is a Deno harness invoking `plan-audience` (and `vertex-parse`) with
+cache bypassed so nothing stale is measured. Fixes land in
+`supabase/functions/plan-audience/index.ts` and
+`supabase/functions/_shared/audience-algebra.ts` (invariant guard), plus tests.
+Engine version bumped so cached answers recompute. No page redesign, no data
+reload, no change to the splits already working on screen.

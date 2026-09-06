@@ -228,14 +228,17 @@ serve(async (req) => {
     }
 
     ir = JSON.parse(semanticIrKey(ir)) as IR;
-const ENGINE_VERSION = "v16-unique-people";
+const ENGINE_VERSION = "v17-union-people";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
     const disabledIds = Array.isArray(body.disabled_ids)
       ? body.disabled_ids.map(String).sort()
       : [];
+    const extraIds = Array.isArray(body.extra_ids)
+      ? body.extra_ids.map(String).sort()
+      : [];
     const irHash = await sha256(
-      ENGINE_VERSION + semanticIrKey(ir as unknown as Record<string, unknown>) + JSON.stringify(body.baseline ?? null) + String(evidence) + JSON.stringify(disabledIds),
+      ENGINE_VERSION + semanticIrKey(ir as unknown as Record<string, unknown>) + JSON.stringify(body.baseline ?? null) + String(evidence) + JSON.stringify(disabledIds) + JSON.stringify(extraIds),
     );
     const cached = await sb.from("result_cache").select("payload").eq("query_ir_hash", irHash).maybeSingle();
     if (cached.data?.payload) {
@@ -244,7 +247,8 @@ const ENGINE_VERSION = "v16-unique-people";
       });
     }
 
-    const payload = await plan(sb, ir, body.baseline ?? null, evidence, disabledIds);
+    const payload = await plan(sb, ir, body.baseline ?? null, evidence, disabledIds, extraIds);
+
     await sb.from("result_cache").upsert({ query_ir_hash: irHash, query_ir: ir, payload });
     return new Response(JSON.stringify({ ...payload, source, cached: false }), {
       headers: { ...CORS, "Content-Type": "application/json" },

@@ -261,18 +261,42 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
 
   // Anchor's own modifiers only.
   const myMods = mods.filter((m) => !m.applies_to?.length || m.applies_to.includes(anchor.id));
+  const preMod: any[] = rows;
   let scale = 1;
+  let nested = false;
   for (const m of myMods) {
     const t = squash(m.token);
     if (!t) continue;
-    const preferred = rows.filter((r) => squash(`${r.signal} ${r.sub_category} ${r.category}`).includes(t));
-    if (preferred.length) rows = preferred;
+    const group = PREMIUM_GROUP.has(t) ? [...PREMIUM_GROUP] : [t];
+    let preferred = rows.filter((r) =>
+      group.some((g) => squash(`${r.signal} ${r.sub_category} ${r.category} ${r.product_families}`).includes(g))
+    );
+    // Semantic fallback inside this list only (affluent -> Luxury Skin Care).
+    if (!preferred.length && PREMIUM_GROUP.has(t)) {
+      try {
+        const [mv] = await embed(["premium luxury affluent high value"], "RETRIEVAL_QUERY");
+        const { data: near } = await sb.rpc("match_signals", {
+          query_embedding: JSON.stringify(mv), match_count: 200, min_sim: 0.5,
+        });
+        const ok = new Set((near || []).map((r: any) => r.master_signal_id));
+        preferred = rows.filter((r) => ok.has(r.master_signal_id));
+      } catch (_e) { /* fall through to scale */ }
+    }
+    if (preferred.length) { rows = preferred; nested = true; }
     else scale = Math.min(scale, Number(m.param) || 0.12);
   }
 
-  const hits: Hit[] = rows.map((r: any) => ({ ...r, volume: Number(r.volume), reliability: Number(r.reliability), cls: classify(r) }));
-  return { hits, isPlatform, scale, modifiers: myMods };
+  const hits: Hit[] = rows.map((r: any) => ({
+    ...r, volume: Number(r.volume), reliability: Number(r.reliability), cls: classify(r),
+    // Modifier-kept rows of one partner describe the same premium cohort: parent absorbs child.
+    nest_key: nested ? `${r.partner_name}::${r.pii}::mod` : null,
+  }));
+  const contextHits: Hit[] = preMod.map((r: any) => ({
+    ...r, volume: Number(r.volume), reliability: Number(r.reliability), cls: classify(r), nest_key: null,
+  }));
+  return { hits, contextHits, isPlatform, scale, modifiers: myMods };
 }
+
 
 /* --------------------------------- scoring --------------------------------- */
 async function slice(sb: SupabaseClient, ids: string[], geos: string[], ages: string[], genders: string[], above: number | null) {

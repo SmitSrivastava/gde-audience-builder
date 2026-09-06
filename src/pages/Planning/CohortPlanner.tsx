@@ -800,7 +800,7 @@ export default function CohortPlanner() {
                 </div>
               </div>
 
-              <div className="lg:col-span-2">
+              <div className="xl:col-span-2">
                 <AudienceStrategy payload={payload} brief={query} />
               </div>
             </div>

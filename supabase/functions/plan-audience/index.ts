@@ -488,16 +488,17 @@ async function plan(sb: SupabaseClient, ir: IR) {
   const productFamilies = anchors.filter((a) => !PLATFORM_RE.test(a.canonical)).map((a) => a.family).filter(Boolean);
 
   const scored: {
-    anchor: Anchor; hits: Hit[]; actual: number; intent: number; isPlatform: boolean; ids: string[];
+    anchor: Anchor; hits: Hit[]; contextHits: Hit[]; actual: number; intent: number; isPlatform: boolean; ids: string[];
   }[] = [];
 
   for (const a of anchors) {
     const others = PLATFORM_RE.test(a.canonical) ? productFamilies : [];
-    const { hits, isPlatform, scale } = await matchAnchor(sb, a, mods, others);
-    const ids = hits.map((h) => h.master_signal_id);
+    const { hits, contextHits, isPlatform, scale } = await matchAnchor(sb, a, mods, others);
+    const ids = [...new Set([...hits, ...contextHits].map((h) => h.master_signal_id))];
     const volMap = await slice(sb, ids, geos, ages, genders, above);
     const actualRows = hits.filter((h) => h.cls === "actual");
-    const intentRows = hits.filter((h) => h.cls === "intent");
+    // Interest-backed people come from the anchor's full list, not the modifier keep-list.
+    const intentRows = (contextHits.length ? contextHits : hits).filter((h) => h.cls === "intent");
 
     let actual = await unionPeople(sb, actualRows, volMap, ir.mode);
     const intent = await unionPeople(sb, intentRows, volMap, ir.mode);
@@ -510,7 +511,7 @@ async function plan(sb: SupabaseClient, ir: IR) {
       actual = Math.min(actual, capAll);
     }
     actual *= scale;
-    scored.push({ anchor: a, hits, actual, intent: intent * scale, isPlatform, ids });
+    scored.push({ anchor: a, hits, contextHits, actual, intent: intent * scale, isPlatform, ids });
   }
 
   const platformAnd = ir.join === "AND" && scored.length >= 2 && scored.some((s) => s.isPlatform);
@@ -534,7 +535,7 @@ async function plan(sb: SupabaseClient, ir: IR) {
     const lower = Math.max(0, a + b - pop);
     const upper = Math.min(a, b);
     people = lower + rho * (upper - lower);
-    intentPeople = Math.min(A.intent, B.intent);
+    intentPeople = Math.min(A.intent || A.actual, B.intent || B.actual);
   } else {
     const allActual = scored.flatMap((s) => s.hits.filter((h) => h.cls === "actual"));
     const allIntent = scored.flatMap((s) => s.hits.filter((h) => h.cls === "intent"));
@@ -553,9 +554,25 @@ async function plan(sb: SupabaseClient, ir: IR) {
   const peopleCapped = Math.max(0, Math.min(people, cap));
   const modelled = Math.max(peopleCapped, intentPeople);
 
-  const matched = [...allHits]
+  const perAnchor = Math.max(6, Math.floor(25 / Math.max(1, scored.length)));
+  const picked: Hit[] = [];
+  const pickedIds = new Set<string>();
+  for (const s of scored) {
+    const list = [...s.hits].sort((a, b) => b.volume - a.volume);
+    let n = 0;
+    for (const r of list) {
+      if (pickedIds.has(r.master_signal_id)) continue;
+      picked.push(r); pickedIds.add(r.master_signal_id);
+      if (++n >= perAnchor) break;
+    }
+  }
+  for (const r of [...allHits].sort((a, b) => b.volume - a.volume)) {
+    if (picked.length >= 25) break;
+    if (pickedIds.has(r.master_signal_id)) continue;
+    picked.push(r); pickedIds.add(r.master_signal_id);
+  }
+  const matched = picked
     .sort((a, b) => b.volume - a.volume)
-    .slice(0, 25)
     .map((r) => ({
       audience_signal: r.signal,
       sector: r.sector,

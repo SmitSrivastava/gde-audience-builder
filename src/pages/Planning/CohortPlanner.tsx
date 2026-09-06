@@ -248,6 +248,8 @@ export default function CohortPlanner() {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<PlanResult | null>(null);
   const [payload, setPayload] = useState<any>(null);
+  // Unfiltered result: filters are a restriction of this, never a fresh plan.
+  const [basePayload, setBasePayload] = useState<any>(null);
   const [filters, setFilters] = useState<Filters>({ geo_tier: [], age_bucket: [], gender_bucket: [] });
   const [expr, setExpr] = useState<Expression>(() => newGroup());
 
@@ -328,15 +330,18 @@ export default function CohortPlanner() {
       if (data?.refuse?.flag) {
         setResult(null);
         setPayload(null);
+        setBasePayload(null);
         setPlanError(data.refuse.reason || "No known audience family found in this brief.");
         return;
       }
       setPayload(data);
+      setBasePayload(data);
       setResult(toPlanResult(q, data));
     } catch (e) {
       console.error("plan-audience failed", e);
       setResult(runSearch(rows, q));
       setPayload(null);
+      setBasePayload(null);
       setPlanError("Live planning engine unavailable — showing local estimate.");
     } finally {
       setPlanning(false);
@@ -346,11 +351,20 @@ export default function CohortPlanner() {
   /* Re-slice the same reading of the brief with the page filters. No re-parse. */
   const applyFilters = async (next: Filters) => {
     setFilters(next);
-    if (!payload?.query_ir) return;
+    const base = basePayload || payload;
+    if (!base?.query_ir) return;
     setPlanning(true);
     try {
       const { data, error } = await supabase.functions.invoke("plan-audience", {
-        body: { query_ir: payload.query_ir, filters: next },
+        body: {
+          query_ir: base.query_ir,
+          filters: next,
+          baseline: {
+            people_reach: base.people_reach,
+            actual_people: base.actual_people,
+            intent_people: base.intent_people,
+          },
+        },
       });
       if (error) throw error;
       if (!data?.refuse?.flag) {

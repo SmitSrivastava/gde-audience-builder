@@ -223,8 +223,8 @@ serve(async (req) => {
       });
     }
 
-    const ENGINE_VERSION = "v6-canonical-anchor-retrieval";
-    const irHash = await sha256(ENGINE_VERSION + JSON.stringify(ir));
+    const ENGINE_VERSION = "v9-cube-only-monotonic-filters";
+    const irHash = await sha256(ENGINE_VERSION + JSON.stringify(ir) + JSON.stringify(body.baseline ?? null));
     const cached = await sb.from("result_cache").select("payload").eq("query_ir_hash", irHash).maybeSingle();
     if (cached.data?.payload) {
       return new Response(JSON.stringify({ ...cached.data.payload, source, cached: true }), {
@@ -232,7 +232,7 @@ serve(async (req) => {
       });
     }
 
-    const payload = await plan(sb, ir);
+    const payload = await plan(sb, ir, body.baseline ?? null);
     await sb.from("result_cache").upsert({ query_ir_hash: irHash, query_ir: ir, payload });
     return new Response(JSON.stringify({ ...payload, source, cached: false }), {
       headers: { ...CORS, "Content-Type": "application/json" },
@@ -380,24 +380,39 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
 
 
 /* --------------------------------- scoring --------------------------------- */
-async function slice(sb: SupabaseClient, ids: string[], geos: string[], ages: string[], genders: string[], above: number | null) {
-  if (!ids.length) return {} as Record<string, number>;
+// Cube-derived share of each signal that survives the selected geo/age/gender slice.
+// A signal with no cells inside the slice contributes 0 — never its national volume.
+// With no filter selected every share is exactly 1, so filtered <= unfiltered always.
+async function sliceShares(
+  sb: SupabaseClient, ids: string[], geos: string[], ages: string[], genders: string[], above: number | null,
+) {
   const out: Record<string, number> = {};
+  if (!ids.length) return out;
+  const filtered = !!(geos.length || ages.length || genders.length || above != null);
+  if (!filtered) {
+    for (const id of ids) out[id] = 1;
+    return out;
+  }
+  for (const id of ids) out[id] = 0;
   for (let i = 0; i < ids.length; i += 200) {
-    const { data, error } = await sb.rpc("slice_signals", {
-      ids: ids.slice(i, i + 200),
-      geos: geos.length ? geos : null,
-      ages: ages.length ? ages : null,
-      genders: genders.length ? genders : null,
-      above_age: above,
-    });
-    if (error) throw error;
-    for (const s of data || []) out[s.master_signal_id] = Number(s.slice_volume);
+    const chunk = ids.slice(i, i + 200);
+    const [full, cut] = await Promise.all([
+      sb.rpc("slice_signals", { ids: chunk, geos: null, ages: null, genders: null, above_age: null }),
+      sb.rpc("slice_signals", { ids: chunk, geos: geos.length ? geos : null, ages: ages.length ? ages : null, genders: genders.length ? genders : null, above_age: above }),
+    ]);
+    if (full.error) throw full.error;
+    if (cut.error) throw cut.error;
+    const f: Record<string, number> = {};
+    for (const s of full.data || []) f[s.master_signal_id] = Number(s.slice_volume) || 0;
+    for (const s of cut.data || []) {
+      const tot = f[s.master_signal_id] || 0;
+      out[s.master_signal_id] = tot > 0 ? Math.min(1, (Number(s.slice_volume) || 0) / tot) : 0;
+    }
   }
   return out;
 }
 
-async function unionPeople(sb: SupabaseClient, rows: Hit[], volMap: Record<string, number>, mode: IR["mode"]) {
+async function unionPeople(sb: SupabaseClient, rows: Hit[], shareMap: Record<string, number>, mode: IR["mode"]) {
   if (!rows.length) return 0;
   const [{ data: intra }, { data: pr }, { data: uni }] = await Promise.all([
     sb.from("intra_overlap_rule").select("*"),
@@ -412,7 +427,8 @@ async function unionPeople(sb: SupabaseClient, rows: Hit[], volMap: Record<strin
   type It = { partner: string; pii: string; families: string[]; vol: number; name: string; nest: string | null };
   const items: It[] = [];
   for (const r of rows) {
-    const vol = (volMap[r.master_signal_id] ?? r.volume ?? 0) * Number(r.reliability || 1);
+    const share = shareMap[r.master_signal_id] ?? 0;
+    const vol = Number(r.volume || 0) * share * Number(r.reliability || 1);
     if (vol <= 0) continue;
     items.push({
       partner: r.partner_name, pii: r.pii,
@@ -420,6 +436,7 @@ async function unionPeople(sb: SupabaseClient, rows: Hit[], volMap: Record<strin
       vol, name: String(r.signal || "").toLowerCase(), nest: r.nest_key ?? null,
     });
   }
+
   const groups = new Map<string, It[]>();
   for (const it of items) {
     const k = `${it.partner}::${it.pii}`;
@@ -484,14 +501,19 @@ async function platformUniverse(sb: SupabaseClient, geos: string[], ages: string
     .eq("partner_name", "Zepto").eq("row_role", "intent").limit(400);
   const ids = (zrows || []).map((r: any) => r.master_signal_id);
   if (!ids.length || (!geos.length && !ages.length && !genders.length && above == null)) return total;
-  const [full, cut] = await Promise.all([
-    slice(sb, ids, [], [], [], null),
-    slice(sb, ids, geos, ages, genders, above),
-  ]);
-  const f = Object.values(full).reduce((a, b) => a + b, 0);
-  const c = Object.values(cut).reduce((a, b) => a + b, 0);
-  const share = f > 0 ? c / f : 1;
+  let f = 0, c = 0;
+  for (let i = 0; i < ids.length; i += 200) {
+    const chunk = ids.slice(i, i + 200);
+    const [full, cut] = await Promise.all([
+      sb.rpc("slice_signals", { ids: chunk, geos: null, ages: null, genders: null, above_age: null }),
+      sb.rpc("slice_signals", { ids: chunk, geos: geos.length ? geos : null, ages: ages.length ? ages : null, genders: genders.length ? genders : null, above_age: above }),
+    ]);
+    for (const s of full.data || []) f += Number(s.slice_volume) || 0;
+    for (const s of cut.data || []) c += Number(s.slice_volume) || 0;
+  }
+  const share = f > 0 ? Math.min(1, c / f) : 0;
   return total * share;
+
 }
 
 async function popSlice(sb: SupabaseClient, geos: string[], ages: string[], genders: string[], above: number | null) {
@@ -511,13 +533,21 @@ async function popSlice(sb: SupabaseClient, geos: string[], ages: string[], gend
   return pop || 9.5e8;
 }
 
-async function splits(sb: SupabaseClient, ids: string[], geos: string[], ages: string[], genders: string[], above: number | null) {
+// Bars come from the same cube cells that drive the headline. Each signal's cells are
+// rescaled to that signal's own volume so cube-thin rows can never distort the mix.
+async function splits(
+  sb: SupabaseClient, ids: string[], geos: string[], ages: string[], genders: string[], above: number | null,
+  volOf: Record<string, number> = {},
+) {
   const geo: Record<string, number> = {}, age: Record<string, number> = {}, gen: Record<string, number> = {};
   for (let i = 0; i < ids.length; i += 200) {
     const { data } = await sb.from("signal_cell")
-      .select("geo_tier, age_bucket, gender_bucket, volume")
+      .select("master_signal_id, geo_tier, age_bucket, gender_bucket, volume")
       .in("master_signal_id", ids.slice(i, i + 200)).limit(60000);
-    for (const r of data || []) {
+    const rows = data || [];
+    const totals: Record<string, number> = {};
+    for (const r of rows) totals[r.master_signal_id] = (totals[r.master_signal_id] || 0) + (Number(r.volume) || 0);
+    for (const r of rows) {
       if (geos.length && !geos.includes(r.geo_tier)) continue;
       if (ages.length && !ages.includes(r.age_bucket)) continue;
       if (genders.length && !genders.includes(r.gender_bucket)) continue;
@@ -526,17 +556,22 @@ async function splits(sb: SupabaseClient, ids: string[], geos: string[], ages: s
         if (r.age_bucket === "Less than 22") w = 0;
         else if (r.age_bucket === "23-28") w = 0.5;
       }
-      const v = Number(r.volume) * w;
+      const tot = totals[r.master_signal_id] || 0;
+      const target = volOf[r.master_signal_id];
+      const k = tot > 0 && target ? target / tot : 1;
+      const v = Number(r.volume) * w * k;
       geo[r.geo_tier] = (geo[r.geo_tier] || 0) + v;
       age[r.age_bucket] = (age[r.age_bucket] || 0) + v;
       gen[r.gender_bucket] = (gen[r.gender_bucket] || 0) + v;
     }
   }
+
   const n = (d: Record<string, number>) => {
     const s = Object.values(d).reduce((a, b) => a + b, 0) || 1;
     return Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v / s]));
   };
-  return { geo: n(geo), age: n(age), gen: n(gen) };
+  const total = Object.values(geo).reduce((a, b) => a + b, 0);
+  return { geo: n(geo), age: n(age), gen: n(gen), total };
 }
 
 function card(rows: Hit[], pick: "top" | "tight") {
@@ -550,7 +585,9 @@ function card(rows: Hit[], pick: "top" | "tight") {
 }
 
 /* --------------------------------- plan --------------------------------- */
-async function plan(sb: SupabaseClient, ir: IR) {
+type Baseline = { people_reach?: number; actual_people?: number; intent_people?: number } | null;
+
+async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null) {
   await loadFamilyVocab(sb);
   let geos = ir.dimensions.geo_tier || [];
 
@@ -579,12 +616,12 @@ async function plan(sb: SupabaseClient, ir: IR) {
     // Every downstream metric uses the same post-modifier list shown in the table.
     // contextHits are retained only for diagnostics and must never enter scoring or slicing.
     const ids = [...new Set(hits.map((h) => h.master_signal_id))];
-    const volMap = await slice(sb, ids, geos, ages, genders, above);
+    const shareMap = await sliceShares(sb, ids, geos, ages, genders, above);
     const actualRows = hits.filter((h) => h.cls === "actual");
     const intentRows = hits.filter((h) => h.cls === "intent");
 
-    let actual = await unionPeople(sb, actualRows, volMap, ir.mode);
-    const intent = await unionPeople(sb, intentRows, volMap, ir.mode);
+    let actual = await unionPeople(sb, actualRows, shareMap, ir.mode);
+    const intent = await unionPeople(sb, intentRows, shareMap, ir.mode);
 
     if (isPlatform && !others.length) {
       actual = await platformUniverse(sb, geos, ages, genders, above);
@@ -617,7 +654,10 @@ async function plan(sb: SupabaseClient, ir: IR) {
     const { data } = await sb.from("and_intersect_rho").select("*")
       .or(`and(family_a.eq.${A.anchor.family},family_b.eq.${B.anchor.family}),and(family_a.eq.${B.anchor.family},family_b.eq.${A.anchor.family})`);
     const rho = data?.[0] ? Number(data[0].rho_and_expected) : (A.anchor.family === B.anchor.family ? 0.75 : 0.12);
-    const pop = await popSlice(sb, geos, ages, genders, above);
+    // The overlap between two audiences is a property of the whole population, not of
+    // the slice being viewed. Using the narrowed population here would inflate the
+    // overlap floor and make a filtered audience larger than the unfiltered one.
+    const pop = await popSlice(sb, [], [], [], null);
     // Join the complete post-modifier audience on each side. Classification-specific
     // KPIs are calculated separately below and never borrow an unfiltered fallback.
     const a = A.actual + A.intent, b = B.actual + B.intent;
@@ -637,20 +677,26 @@ async function plan(sb: SupabaseClient, ir: IR) {
     const allActual = scored.flatMap((s) => s.hits.filter((h) => h.cls === "actual"));
     const allIntent = scored.flatMap((s) => s.hits.filter((h) => h.cls === "intent"));
     const allIds = scored.flatMap((s) => s.ids);
-    const volMap = await slice(sb, allIds, geos, ages, genders, above);
+    const shareMap = await sliceShares(sb, allIds, geos, ages, genders, above);
     people = scored.some((s) => s.isPlatform)
       ? Math.max(...scored.map((s) => s.actual))
-      : await unionPeople(sb, allActual, volMap, ir.mode);
+      : await unionPeople(sb, allActual, shareMap, ir.mode);
     actualPeople = people;
-    intentPeople = await unionPeople(sb, allIntent, volMap, ir.mode);
+    intentPeople = await unionPeople(sb, allIntent, shareMap, ir.mode);
   }
 
   const allHits = scored.flatMap((s) => s.hits);
   const allIds = [...new Set(allHits.map((h) => h.master_signal_id))];
-  const mix = await splits(sb, allIds, geos, ages, genders, above);
+  const volOf: Record<string, number> = {};
+  for (const h of allHits) volOf[h.master_signal_id] = Number(h.volume || 0) * Number(h.reliability || 1);
+  const mix = await splits(sb, allIds, geos, ages, genders, above, volOf);
+  // Share of the audience that survives the filter, measured once on the cube.
+  const filtered = !!(geos.length || ages.length || genders.length || above != null);
+  const mixAll = filtered ? await splits(sb, allIds, [], [], [], null, volOf) : mix;
+  const keepShare = filtered && mixAll.total > 0 ? Math.min(1, mix.total / mixAll.total) : 1;
   const cap = await popSlice(sb, geos, ages, genders, above);
-  const peopleCapped = Math.max(0, Math.min(people, cap));
-  const modelled = peopleCapped;
+  let peopleCapped = Math.max(0, Math.min(people, cap));
+
 
   const perAnchor = Math.max(6, Math.floor(25 / Math.max(1, scored.length)));
   const picked: Hit[] = [];
@@ -689,10 +735,6 @@ async function plan(sb: SupabaseClient, ir: IR) {
   const precisionRows = allHits.filter((h) => modTokens.some((t) => t && squash(`${h.signal} ${h.sub_category}`).includes(t)));
   const precision = card(precisionRows.length ? precisionRows : allHits.filter((h) => h.reliability >= 0.7), "tight");
 
-  const geo_split = Object.entries(mix.geo).map(([k, sh]) => ({ geo_tier: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
-  const age_split = Object.entries(mix.age).map(([k, sh]) => ({ age_bucket: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
-  const gender_split = Object.entries(mix.gen).map(([k, sh]) => ({ gender_bucket: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
-
   const modLine = mods.length
     ? mods.map((m) => {
       const names = (m.applies_to || []).map((id) => anchors.find((a) => a.id === id)?.canonical).filter(Boolean);
@@ -711,6 +753,31 @@ async function plan(sb: SupabaseClient, ir: IR) {
   actualPeople = Math.max(0, Math.min(actualPeople, peopleCapped));
   intentPeople = Math.max(0, Math.min(intentPeople, peopleCapped));
 
+  // Invariant: a narrowed audience can never exceed the unfiltered one.
+  if (baseline && Number(baseline.people_reach) > 0) {
+    // Filtering is a restriction of the unfiltered audience by its cube share, so the
+    // parts always add back up to the whole.
+    const capTotal = Number(baseline.people_reach) * keepShare;
+    if (filtered && capTotal > 0) {
+      const k0 = capTotal / (peopleCapped || capTotal);
+      peopleCapped = capTotal;
+      actualPeople *= k0;
+      intentPeople *= k0;
+    }
+    if (peopleCapped > capTotal) {
+      const k = capTotal / peopleCapped;
+      peopleCapped = capTotal;
+      actualPeople *= k;
+      intentPeople *= k;
+    }
+    if (Number(baseline.actual_people) >= 0) actualPeople = Math.min(actualPeople, Number(baseline.actual_people));
+    if (Number(baseline.intent_people) >= 0) intentPeople = Math.min(intentPeople, Number(baseline.intent_people));
+  }
+
+  const geo_split = Object.entries(mix.geo).map(([k, sh]) => ({ geo_tier: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
+  const age_split = Object.entries(mix.age).map(([k, sh]) => ({ age_bucket: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
+  const gender_split = Object.entries(mix.gen).map(([k, sh]) => ({ gender_bucket: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
+
   return {
     query_ir: ir,
     base_cohort: anchors.map((a) => title(a.canonical)).join(` ${ir.join} `) || "—",
@@ -719,7 +786,7 @@ async function plan(sb: SupabaseClient, ir: IR) {
     people_reach: Math.round(peopleCapped),
     actual_people: Math.round(actualPeople),
     intent_people: Math.round(intentPeople),
-    india_intelligence: Math.round(modelled),
+    india_intelligence: Math.round(peopleCapped),
     identifier_reach: Math.round(peopleCapped),
     planning_confidence: allHits.some((r) => r.reliability >= 0.7) ? "High" : "Medium",
     matched_signals: matched,

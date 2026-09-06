@@ -680,7 +680,7 @@ async function plan(
   /* 2. the matched table: what the planner actually sees and ticks */
   // Keep each anchor's selected population stable whether it is planned alone or
   // beside other anchors. A combined query must reuse the same A and B values.
-  const perAnchor = 25;
+  const perAnchor = 60;
   const tableByAnchor: Hit[][] = matches.map(() => []);
   matches.forEach((m, i) => {
     for (const r of [...m.hits].sort((a, b) => peopleOf(b) - peopleOf(a))) {

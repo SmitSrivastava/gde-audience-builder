@@ -6,7 +6,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { CORS, embed } from "../_shared/vertex.ts";
 import { canonicalAnchor, semanticIrKey } from "../_shared/query-normalization.ts";
-import { boundedIntersection, boundedUnion, subtractAudience } from "../_shared/audience-algebra.ts";
+import { boundedIntersection, boundedUnion, capParts, reconcileUnion, subtractAudience } from "../_shared/audience-algebra.ts";
 
 function normBrief(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9+]+/g, " ").replace(/\s+/g, " ").trim();
@@ -228,7 +228,7 @@ serve(async (req) => {
     }
 
     ir = JSON.parse(semanticIrKey(ir)) as IR;
-const ENGINE_VERSION = "v17-union-people";
+const ENGINE_VERSION = "v18-union-reconciled";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
     const disabledIds = Array.isArray(body.disabled_ids)
@@ -870,8 +870,9 @@ async function plan(
       modifiers: mods,
       rules: [
         `Anchors: ${anchors.map((a) => title(a.canonical)).join(` ${ir.join} `)}`,
-        `Headline is one de-duplicated set of people covering purchase and interest evidence together: ${Math.round(people).toLocaleString("en-IN")}`,
-        `Purchase-backed inside it: ${Math.round(actualPeople).toLocaleString("en-IN")} · interest-backed inside it: ${Math.round(intentPeople).toLocaleString("en-IN")} (overlapping subsets, never added)`,
+        `Purchase-backed people counted in full: ${Math.round(actualPeople).toLocaleString("en-IN")} · interest-backed people counted in full: ${Math.round(intentPeople).toLocaleString("en-IN")}`,
+        `Headline is the union of those two overlapping groups — never below the larger, never above their sum: ${Math.round(people).toLocaleString("en-IN")}`,
+
         anchors.length < 2
           ? "Single anchor: people counted once after phone/device de-duplication and partner overlap."
           : ir.join === "AND"

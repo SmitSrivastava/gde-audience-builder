@@ -799,8 +799,13 @@ export default function CohortPlanner() {
                   <div className="mt-3 text-xs text-slate-500">Partner sources: {result.partners.join(", ") || "—"}</div>
                 </div>
               </div>
+
+              <div className="lg:col-span-2">
+                <AudienceStrategy payload={payload} brief={query} />
+              </div>
             </div>
           )}
+
         </div>
       </main>
     </div>

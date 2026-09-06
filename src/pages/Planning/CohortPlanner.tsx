@@ -262,6 +262,8 @@ export default function CohortPlanner() {
   // Evidence toggle: restricts the whole page to purchase-backed or interest-backed people.
   const [evidence, setEvidence] = useState<"actual" | "intent" | null>(null);
   const [disabledSignalIds, setDisabledSignalIds] = useState<string[]>([]);
+  const [extraSignalIds, setExtraSignalIds] = useState<string[]>([]);
+
 
   useEffect(() => {
     supabase.from("seed_chip").select("chip_label").then(({ data }) => {

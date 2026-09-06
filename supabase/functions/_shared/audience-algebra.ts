@@ -12,7 +12,45 @@ export function boundedIntersection(left: number, right: number, population: num
 }
 
 export function boundedUnion(left: number, right: number, population: number, rho: number) {
-  return Math.min(finite(population), finite(left) + finite(right) - boundedIntersection(left, right, population, rho));
+  const intersection = boundedIntersection(left, right, population, rho);
+  return unionFromIntersection(left, right, intersection);
+}
+
+export type BooleanReach = { left: number; right: number; intersection: number; union: number; difference: number };
+
+/**
+ * Calculate the intersection once, then derive OR and NOT from that exact value.
+ * This is the sole Boolean arithmetic path for total, purchase and interest reach.
+ */
+export function booleanReach(left: number, right: number, population: number, rho: number): BooleanReach {
+  const a = Math.min(finite(left), finite(population));
+  const b = Math.min(finite(right), finite(population));
+  const intersection = boundedIntersection(a, b, population, rho);
+  const result = {
+    left: a,
+    right: b,
+    intersection,
+    union: unionFromIntersection(a, b, intersection),
+    difference: Math.max(0, a - intersection),
+  };
+  assertBooleanReach(result);
+  return result;
+}
+
+export function unionFromIntersection(left: number, right: number, intersection: number) {
+  return finite(left) + finite(right) - Math.min(finite(intersection), finite(left), finite(right));
+}
+
+/** Throws rather than allowing mathematically inconsistent audience results to ship. */
+export function assertBooleanReach(result: BooleanReach) {
+  const { left: a, right: b, intersection: and, union: or, difference: not } = result;
+  const epsilon = 1e-6;
+  if (and > Math.min(a, b) + epsilon) throw new Error("Audience invariant failed: AND > min(A,B)");
+  if (Math.abs(or - (a + b - and)) > epsilon) throw new Error("Audience invariant failed: OR != A+B-AND");
+  if (or + epsilon < Math.max(a, b)) throw new Error("Audience invariant failed: OR < max(A,B)");
+  if (or > a + b + epsilon) throw new Error("Audience invariant failed: OR > A+B");
+  if (Math.abs(not - (a - and)) > epsilon) throw new Error("Audience invariant failed: NOT != A-AND");
+  if (not < -epsilon) throw new Error("Audience invariant failed: NOT < 0");
 }
 
 export function reconcileReach(total: number, actual: number): ReachParts {
@@ -28,7 +66,7 @@ export function selectEvidence(parts: ReachParts, evidence: "actual" | "intent" 
 }
 
 export function subtractAudience(included: number, excluded: number, population: number, rho: number) {
-  return Math.max(0, finite(included) - boundedIntersection(included, excluded, population, rho));
+  return booleanReach(included, excluded, population, rho).difference;
 }
 
 /**

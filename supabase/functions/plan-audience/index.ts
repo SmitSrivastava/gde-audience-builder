@@ -6,7 +6,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { CORS, embed } from "../_shared/vertex.ts";
 import { canonicalAnchor, semanticIrKey } from "../_shared/query-normalization.ts";
-import { boundedIntersection, boundedUnion, capParts, reconcileUnion, subtractAudience } from "../_shared/audience-algebra.ts";
+import { booleanReach, capParts, reconcileUnion } from "../_shared/audience-algebra.ts";
 
 function normBrief(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9+]+/g, " ").replace(/\s+/g, " ").trim();
@@ -228,7 +228,7 @@ serve(async (req) => {
     }
 
     ir = JSON.parse(semanticIrKey(ir)) as IR;
-const ENGINE_VERSION = "v18-union-reconciled";
+const ENGINE_VERSION = "v22-stable-exclusion-family";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
     const disabledIds = Array.isArray(body.disabled_ids)
@@ -487,7 +487,7 @@ async function uniquePeopleForClass(
       const sameFamily = cur.families.some((f) => accF.has(f));
       const sameSector = !!cur.sector && accS.has(cur.sector);
       const rho = sameFamily || sameSector ? 0.85 : Math.max(0.35, rhoOf("R5_SIBLING"));
-      u += cur.vol * (1 - Math.min(0.95, rho));
+      u = booleanReach(u, cur.vol, population, rho).union;
       cur.families.forEach((f) => accF.add(f));
       if (cur.sector) accS.add(cur.sector);
     }
@@ -497,7 +497,7 @@ async function uniquePeopleForClass(
     nodes.push({ partner, people: u, families: accF, sectors: accS });
   }
 
-  // Across partners, add only the non-overlapping remainder of each partner audience.
+  // Across partners, calculate AND once and derive OR as A+B-AND.
   nodes.sort((a, b) => b.people - a.people);
   let reach = nodes[0].people;
   const accF = new Set(nodes[0].families);
@@ -513,8 +513,7 @@ async function uniquePeopleForClass(
     ));
     const stored = Math.max(0, ...candidates.map((x: any) => Number(x.rho_same_pii || x.base_rho || 0)));
     const rho = same ? Math.min(0.70, Math.max(0.65, stored)) : Math.min(0.85, Math.max(0.08, stored));
-    const overlap = rho * Math.min(reach, n.people);
-    reach += n.people - overlap;
+    reach = booleanReach(reach, n.people, population, rho).union;
     n.families.forEach((f) => accF.add(f));
     n.sectors.forEach((sector) => accS.add(sector));
     priorPartners.push(n.partner);
@@ -534,10 +533,18 @@ async function exclusionAnchors(sb: SupabaseClient, exclusions: string[]): Promi
   return exclusions.map((value, index) => {
     const canonical = canonicalAnchor(value);
     const exact = (data || []).find((row: any) => canonicalAnchor(String(row.token)) === canonical);
+    const vocabFamily = Object.entries(FAMILY_VOCAB).find(([, terms]) =>
+      terms.some((term) => canonicalAnchor(term) === canonical)
+    )?.[0];
+    const canonicalRoots = canonical.split(/\s+/).filter(Boolean).map((word) => word.slice(0, 3));
+    const rootedFamily = Object.keys(FAMILY_VOCAB).find((family) => {
+      const familyRoots = family.replace(/_/g, " ").split(/\s+/).filter(Boolean).map((word) => word.slice(0, 3));
+      return canonicalRoots.some((root) => root.length === 3 && familyRoots.includes(root));
+    });
     return {
       id: `x${index + 1}`,
       canonical,
-      family: String(exact?.family || "").toLowerCase(),
+      family: String(exact?.family || vocabFamily || rootedFamily || canonical.replace(/\s+/g, "_")).toLowerCase(),
       role: "exclude",
       tokens: [canonical],
     };
@@ -671,27 +678,18 @@ async function plan(
   }
 
   /* 2. the matched table: what the planner actually sees and ticks */
-  const perAnchor = Math.max(6, Math.floor(25 / Math.max(1, matches.length)));
-  const takenIds = new Set<string>();
+  // Keep each anchor's selected population stable whether it is planned alone or
+  // beside other anchors. A combined query must reuse the same A and B values.
+  const perAnchor = 25;
   const tableByAnchor: Hit[][] = matches.map(() => []);
   matches.forEach((m, i) => {
     for (const r of [...m.hits].sort((a, b) => peopleOf(b) - peopleOf(a))) {
-      if (takenIds.has(r.master_signal_id) || TEST_RE.test(r.signal)) continue;
-      takenIds.add(r.master_signal_id);
+      if (TEST_RE.test(r.signal)) continue;
       tableByAnchor[i].push(r);
       if (tableByAnchor[i].length >= perAnchor) break;
     }
   });
-  let tableCount = tableByAnchor.reduce((s, l) => s + l.length, 0);
-  matches.forEach((m, i) => {
-    for (const r of [...m.hits].sort((a, b) => peopleOf(b) - peopleOf(a))) {
-      if (tableCount >= 25) break;
-      if (takenIds.has(r.master_signal_id) || TEST_RE.test(r.signal)) continue;
-      takenIds.add(r.master_signal_id);
-      tableByAnchor[i].push(r);
-      tableCount++;
-    }
-  });
+  const takenIds = new Set(tableByAnchor.flat().map((r) => r.master_signal_id));
 
   /* 3. expand selection: catalog rows close to the anchors but outside the table */
   const suggestionByAnchor: Hit[][] = matches.map(() => []);
@@ -750,28 +748,37 @@ async function plan(
     let family = scored[0].anchor.family;
     for (const current of scored.slice(1)) {
       const rho = await pairRho(sb, family, current.anchor.family);
-      const op = ir.join === "AND" ? boundedIntersection : boundedUnion;
-      people = op(people, current.total, population, rho);
-      actualPeople = op(actualPeople, current.actual, population, rho);
-      intentPeople = op(intentPeople, current.intent, population, rho);
+      // AND is calculated exactly once per measure. OR is then A+B-AND;
+      // it never estimates overlap through a separate path.
+      const totalBoolean = booleanReach(people, current.total, population, rho);
+      const actualBoolean = booleanReach(actualPeople, current.actual, population, rho);
+      const intentBoolean = booleanReach(intentPeople, current.intent, population, rho);
+      people = ir.join === "AND" ? totalBoolean.intersection : totalBoolean.union;
+      actualPeople = ir.join === "AND" ? actualBoolean.intersection : actualBoolean.union;
+      intentPeople = ir.join === "AND" ? intentBoolean.intersection : intentBoolean.union;
       family = current.anchor.family;
     }
 
     for (const excluded of await exclusionAnchors(sb, ir.exclusions || [])) {
       const matchedX = await matchAnchor(sb, excluded, [], []);
-      const ids = [...new Set(matchedX.hits.map((hit) => hit.master_signal_id))];
+      // Excluded B must be the identical population returned when B is planned
+      // alone: same ordering, same selection limit, same scaling and same classes.
+      const excludedLive = [...matchedX.hits]
+        .filter((hit) => !TEST_RE.test(hit.signal))
+        .sort((a, b) => peopleOf(b) - peopleOf(a))
+        .slice(0, perAnchor);
+      const ids = [...new Set(excludedLive.map((hit) => hit.master_signal_id))];
       const shares = await sliceShares(sb, ids, geos, ages, genders, above);
-      const xTotal = await uniquePeopleForClass(sb, matchedX.hits, shares, ir.mode, population);
-      const xActual = await uniquePeopleForClass(sb, matchedX.hits.filter((h) => h.cls === "actual"), shares, ir.mode, population);
-      const xIntent = await uniquePeopleForClass(sb, matchedX.hits.filter((h) => h.cls === "intent"), shares, ir.mode, population);
+      const rawXTotal = await uniquePeopleForClass(sb, excludedLive, shares, ir.mode, population);
+      const xActual = (await uniquePeopleForClass(sb, excludedLive.filter((h) => h.cls === "actual"), shares, ir.mode, population)) * matchedX.scale;
+      const xIntent = (await uniquePeopleForClass(sb, excludedLive.filter((h) => h.cls === "intent"), shares, ir.mode, population)) * matchedX.scale;
+      const xTotal = Math.min(reconcileUnion(rawXTotal * matchedX.scale, xActual, xIntent), population);
       const rho = await pairRho(sb, family, excluded.family);
-      people = subtractAudience(people, xTotal, population, rho);
-      actualPeople = subtractAudience(actualPeople, xActual, population, rho);
-      intentPeople = subtractAudience(intentPeople, xIntent, population, rho);
+       people = booleanReach(people, xTotal, population, rho).difference;
+       actualPeople = booleanReach(actualPeople, xActual, population, rho).difference;
+       intentPeople = booleanReach(intentPeople, xIntent, population, rho).difference;
     }
   }
-  // Headline is the union of the two complete class counts: never below the larger, never above the sum.
-  people = reconcileUnion(people, actualPeople, intentPeople);
 
   const liveHits = scored.flatMap((s) => s.live);
   const evidenceHits = evidence ? liveHits.filter((h) => h.cls === evidence) : liveHits;
@@ -790,11 +797,10 @@ async function plan(
     ({ total: people, actual: actualPeople, intent: intentPeople } = capParts(people, actualPeople, intentPeople, ceiling));
     actualPeople = Math.min(actualPeople, Number(baseline.actual_people || 0) * keepShare);
     intentPeople = Math.min(intentPeople, Number(baseline.intent_people || 0) * keepShare);
-    people = reconcileUnion(people, actualPeople, intentPeople);
   }
 
   ({ total: people, actual: actualPeople, intent: intentPeople } = capParts(people, actualPeople, intentPeople, cap));
-  people = Math.max(0, reconcileUnion(people, actualPeople, intentPeople));
+  people = Math.max(0, people);
 
 
   // The evidence toggle is a subset of the same result, never a new calculation.
@@ -871,13 +877,13 @@ async function plan(
       rules: [
         `Anchors: ${anchors.map((a) => title(a.canonical)).join(` ${ir.join} `)}`,
         `Purchase-backed people counted in full: ${Math.round(actualPeople).toLocaleString("en-IN")} · interest-backed people counted in full: ${Math.round(intentPeople).toLocaleString("en-IN")}`,
-        `Headline is the union of those two overlapping groups — never below the larger, never above their sum: ${Math.round(people).toLocaleString("en-IN")}`,
+        `Total, purchase and interest each use the same Boolean equation independently: ${Math.round(people).toLocaleString("en-IN")} total`,
 
         anchors.length < 2
           ? "Single anchor: people counted once after phone/device de-duplication and partner overlap."
           : ir.join === "AND"
           ? "Two or more anchors combined as an intersection A ∩ B."
-          : "Two or more anchors combined as a union A + B − (A ∩ B).",
+          : "Two or more anchors combined as A + B − the exact same A ∩ B used by AND.",
         ...(exclusionLabel.length ? [`Excludes overlap with ${exclusionLabel.join(" and ")}`] : []),
         `${liveHits.length} of ${tableByAnchor.flat().length} table signals in the scale${extra.size ? ` plus ${extra.size} added from expand selection` : ""}`,
       ],

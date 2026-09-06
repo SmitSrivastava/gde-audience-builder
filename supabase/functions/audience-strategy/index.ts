@@ -79,7 +79,7 @@ Produce:
 5. crm: 4 CRM campaigns, each with the channel, the trigger and the message angle.
 6. watchouts: 2 risks or things to test before scaling.`;
 
-    const out = await gemini(SYSTEM, user, SCHEMA, 2048);
+    const out = await gemini(SYSTEM, user, SCHEMA, 8192);
     return new Response(JSON.stringify(out), {
       headers: { ...CORS, "Content-Type": "application/json" },
     });

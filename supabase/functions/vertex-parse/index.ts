@@ -42,7 +42,7 @@ H8. mode="expected". Typo repair allowed (choclate→chocolate, quickcommerce→
 H9. NEVER output a number, volume or partner name (unless the user named it).
 H10. If the brief contains "and" plus two product nouns you MUST emit two anchors. Never collapse to one.
 H11. The input has already had conversational filler removed. Only retain anchors, modifiers, dimensions, Boolean operators and exclusions. Never put filler into canonical names or tokens.
-H12. `exclusions` contains canonical concepts following NOT, excluding, without or except. Exclusions are never positive anchors.
+H12. exclusions contains canonical concepts following NOT, excluding, without or except. Exclusions are never positive anchors.
 
 FILLER CONTRACT
 Drop audience wrappers (people, users, audience, cohort, segment, consumers, customers, folks, individuals, personas, profiles, population), relative/person words (who, that, which, those, these, someone, anyone, everyone), generic intent verbs (like, love, prefer, interested in, likely to, looking for, want, need, use, consume, engage with), generic behaviour phrases (go for, go out for, visit for, spend time on, hang out, are into, based on, related to, associated with, affinity for), planning/request filler (find, show, give, get, create, build, identify, discover, search, estimate, calculate, size, audience size, scale, reach, target, planning, campaign, media, activation), and grammar filler (the, a, an, for, to, of, in, on, at, by, from, with, as, is, are, was, were, be, being, been, have, also).

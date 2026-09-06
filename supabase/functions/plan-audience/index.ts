@@ -34,6 +34,7 @@ type IR = {
 const AGE_ORDER = ["Less than 22", "23-28", "29-34", "35-40", "41-46", "47+"];
 const PLATFORM_RE = /(quick[\s-]?commerce|q[\s-]?commerce|qcomm|instant delivery|zepto|blinkit|instamart)/i;
 const ACTUAL_PARTNERS = new Set(["Zepto", "Pinelabs", "Razorpay"]);
+const PREMIUM_GROUP = new Set(["premium","luxury","affluent","hni","highvalue","superpremium"]);
 const ACTUAL_TEXT = /(transactor|spend|purchase|purchased|buyer|order|txn|basket|payment)/i;
 
 function modeCol(mode: IR["mode"]) {
@@ -203,7 +204,7 @@ type Hit = {
   master_signal_id: string; partner_name: string; pii: string; signal: string;
   product_families: string; platform_tags: string | null; layer: string; sector: string;
   category: string; sub_category: string; volume: number; reliability: number; sim: number;
-  cls: "actual" | "intent";
+  cls: "actual" | "intent"; nest_key?: string | null;
 };
 
 function classify(r: any): "actual" | "intent" {
@@ -328,7 +329,7 @@ async function unionPeople(sb: SupabaseClient, rows: Hit[], volMap: Record<strin
     return r ? Number(r[modeCol(mode)]) : 0.14;
   };
 
-  type It = { partner: string; pii: string; families: string[]; vol: number; name: string };
+  type It = { partner: string; pii: string; families: string[]; vol: number; name: string; nest: string | null };
   const items: It[] = [];
   for (const r of rows) {
     const vol = (volMap[r.master_signal_id] ?? r.volume ?? 0) * Number(r.reliability || 1);
@@ -336,7 +337,7 @@ async function unionPeople(sb: SupabaseClient, rows: Hit[], volMap: Record<strin
     items.push({
       partner: r.partner_name, pii: r.pii,
       families: String(r.product_families || "").split(",").map((s) => s.trim()).filter(Boolean),
-      vol, name: String(r.signal || "").toLowerCase(),
+      vol, name: String(r.signal || "").toLowerCase(), nest: r.nest_key ?? null,
     });
   }
   const groups = new Map<string, It[]>();
@@ -351,7 +352,9 @@ async function unionPeople(sb: SupabaseClient, rows: Hit[], volMap: Record<strin
     const accF = new Set(lst[0].families);
     const accN = lst[0].name;
     for (const cur of lst.slice(1)) {
-      const nested = (cur.name.length > 6 && accN.includes(cur.name)) || (accN.length > 6 && cur.name.includes(accN));
+      const nested = cur.nest === lst[0].nest && cur.nest != null
+        ? true
+        : (cur.name.length > 6 && accN.includes(cur.name)) || (accN.length > 6 && cur.name.includes(accN));
       if (nested) continue;
       const same = cur.families.some((f) => accF.has(f));
       const rho = same ? rhoOf("R4_SAME_FAMILY") : Math.max(0.08, rhoOf("R6_DISTANT"));

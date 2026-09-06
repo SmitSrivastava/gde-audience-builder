@@ -228,7 +228,7 @@ serve(async (req) => {
     }
 
     ir = JSON.parse(semanticIrKey(ir)) as IR;
-const ENGINE_VERSION = "v22-stable-exclusion-family";
+const ENGINE_VERSION = "v23-class-fallback";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
     const disabledIds = Array.isArray(body.disabled_ids)
@@ -741,6 +741,8 @@ async function plan(
 
   /* 5. Boolean algebra across anchors */
   let people = 0, actualPeople = 0, intentPeople = 0;
+  const classFallback: string[] = [];
+
   if (scored.length) {
     people = scored[0].total;
     actualPeople = scored[0].actual;
@@ -758,6 +760,33 @@ async function plan(
       intentPeople = ir.join === "AND" ? intentBoolean.intersection : intentBoolean.union;
       family = current.anchor.family;
     }
+
+    // A class must never collapse to zero just because one side of the join has
+    // no rows of that class. Fold the class over the anchors that do carry it.
+    const foldClass = async (pick: (s: typeof scored[number]) => number) => {
+      const parts = scored.filter((s) => pick(s) > 0);
+      if (!parts.length) return 0;
+      let value = pick(parts[0]);
+      let fam = parts[0].anchor.family;
+      for (const cur of parts.slice(1)) {
+        const rho = await pairRho(sb, fam, cur.anchor.family);
+        const b = booleanReach(value, pick(cur), population, rho);
+        value = ir.join === "AND" ? b.intersection : b.union;
+        fam = cur.anchor.family;
+      }
+      return value;
+    };
+    if (people > 0 && actualPeople <= 0) {
+      actualPeople = Math.min(await foldClass((s) => s.actual), people);
+      if (actualPeople > 0) classFallback.push("purchase-backed");
+    }
+    if (people > 0 && intentPeople <= 0) {
+      intentPeople = Math.min(await foldClass((s) => s.intent), people);
+      if (intentPeople > 0) classFallback.push("interest-backed");
+    }
+    // The headline is the union of the two full class counts.
+    people = Math.min(reconcileUnion(people, actualPeople, intentPeople), population);
+
 
     for (const excluded of await exclusionAnchors(sb, ir.exclusions || [])) {
       const matchedX = await matchAnchor(sb, excluded, [], []);
@@ -878,6 +907,8 @@ async function plan(
         `Anchors: ${anchors.map((a) => title(a.canonical)).join(` ${ir.join} `)}`,
         `Purchase-backed people counted in full: ${Math.round(actualPeople).toLocaleString("en-IN")} · interest-backed people counted in full: ${Math.round(intentPeople).toLocaleString("en-IN")}`,
         `Total, purchase and interest each use the same Boolean equation independently: ${Math.round(people).toLocaleString("en-IN")} total`,
+        ...(classFallback.length ? [`${classFallback.join(" and ")} had no rows on one side of the join, so it is counted across the audiences that do carry it.`] : []),
+
 
         anchors.length < 2
           ? "Single anchor: people counted once after phone/device de-duplication and partner overlap."

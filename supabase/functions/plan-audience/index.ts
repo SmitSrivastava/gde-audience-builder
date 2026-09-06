@@ -228,7 +228,7 @@ serve(async (req) => {
     }
 
     ir = JSON.parse(semanticIrKey(ir)) as IR;
-const ENGINE_VERSION = "v14-boolean-algebra";
+const ENGINE_VERSION = "v15-boolean-labels";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
     const irHash = await sha256(

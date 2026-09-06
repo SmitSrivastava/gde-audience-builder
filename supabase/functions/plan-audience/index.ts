@@ -34,6 +34,7 @@ type IR = {
 const AGE_ORDER = ["Less than 22", "23-28", "29-34", "35-40", "41-46", "47+"];
 const PLATFORM_RE = /(quick[\s-]?commerce|q[\s-]?commerce|qcomm|instant delivery|zepto|blinkit|instamart)/i;
 const ACTUAL_PARTNERS = new Set(["Zepto", "Pinelabs", "Razorpay"]);
+const PREMIUM_GROUP = new Set(["premium","luxury","affluent","hni","highvalue","superpremium"]);
 const ACTUAL_TEXT = /(transactor|spend|purchase|purchased|buyer|order|txn|basket|payment)/i;
 
 function modeCol(mode: IR["mode"]) {
@@ -177,7 +178,8 @@ serve(async (req) => {
       });
     }
 
-    const irHash = await sha256(JSON.stringify(ir));
+    const ENGINE_VERSION = "v3";
+    const irHash = await sha256(ENGINE_VERSION + JSON.stringify(ir));
     const cached = await sb.from("result_cache").select("payload").eq("query_ir_hash", irHash).maybeSingle();
     if (cached.data?.payload) {
       return new Response(JSON.stringify({ ...cached.data.payload, source, cached: true }), {
@@ -203,7 +205,7 @@ type Hit = {
   master_signal_id: string; partner_name: string; pii: string; signal: string;
   product_families: string; platform_tags: string | null; layer: string; sector: string;
   category: string; sub_category: string; volume: number; reliability: number; sim: number;
-  cls: "actual" | "intent";
+  cls: "actual" | "intent"; nest_key?: string | null;
 };
 
 function classify(r: any): "actual" | "intent" {
@@ -254,25 +256,68 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
         return otherFamilies.some((f) => fams.includes(f));
       }).map((r: any) => ({ ...r, sim: 0.9 }));
     } else {
-      // Platform only -> the platform's own user universe, plus kNN overlays as intent.
-      rows = rows.filter((r: any) => r.platform_tags !== "quick_commerce");
+      // Platform only -> the platform's own user universe (KPI), plus its top nodes and
+      // the semantic q-commerce overlays from other partners for the signals table.
+      const { data: zp } = await sb.from("signal")
+        .select("master_signal_id, partner_name, pii, signal, product_families, platform_tags, layer, sector, category, sub_category, volume, reliability")
+        .eq("platform_tags", "quick_commerce").eq("row_role", "intent")
+        .order("volume", { ascending: false }).limit(12);
+      const DIMLIKE = /^(android|ios|male|female|others?|[\d]+\s*-\s*[\d]+k|sampling)$/i;
+      const seenP = new Set(rows.map((r: any) => r.master_signal_id));
+      for (const r of zp || []) {
+        if (seenP.has(r.master_signal_id) || DIMLIKE.test(String(r.signal || "").trim())) continue;
+        rows.push({ ...r, sim: 0.9 });
+      }
+      // Interest-backed q-commerce overlays from other partners.
+      const { data: ov } = await sb.from("signal")
+        .select("master_signal_id, partner_name, pii, signal, product_families, platform_tags, layer, sector, category, sub_category, volume, reliability")
+        .eq("row_role", "intent").gt("reliability", 0)
+        .is("platform_tags", null)
+        .or("signal.ilike.%commerce%,signal.ilike.%grocery%,sub_category.ilike.%commerce%")
+        .order("volume", { ascending: false }).limit(15);
+      for (const r of ov || []) if (!seenP.has(r.master_signal_id)) rows.push({ ...r, sim: 0.6 });
+      rows = rows.filter((r: any) => !DIMLIKE.test(String(r.signal || "").trim()));
     }
   }
 
   // Anchor's own modifiers only.
   const myMods = mods.filter((m) => !m.applies_to?.length || m.applies_to.includes(anchor.id));
+  const preMod: any[] = rows;
   let scale = 1;
+  let nested = false;
   for (const m of myMods) {
     const t = squash(m.token);
     if (!t) continue;
-    const preferred = rows.filter((r) => squash(`${r.signal} ${r.sub_category} ${r.category}`).includes(t));
-    if (preferred.length) rows = preferred;
+    const group = PREMIUM_GROUP.has(t) ? [...PREMIUM_GROUP] : [t];
+    let preferred = rows.filter((r) =>
+      group.some((g) => squash(`${r.signal} ${r.sub_category} ${r.category} ${r.product_families}`).includes(g))
+    );
+    // Semantic fallback inside this list only (affluent -> Luxury Skin Care).
+    if (!preferred.length && PREMIUM_GROUP.has(t)) {
+      try {
+        const [mv] = await embed(["premium luxury affluent high value"], "RETRIEVAL_QUERY");
+        const { data: near } = await sb.rpc("match_signals", {
+          query_embedding: JSON.stringify(mv), match_count: 200, min_sim: 0.5,
+        });
+        const ok = new Set((near || []).map((r: any) => r.master_signal_id));
+        preferred = rows.filter((r) => ok.has(r.master_signal_id));
+      } catch (_e) { /* fall through to scale */ }
+    }
+    if (preferred.length) { rows = preferred; nested = true; }
     else scale = Math.min(scale, Number(m.param) || 0.12);
   }
 
-  const hits: Hit[] = rows.map((r: any) => ({ ...r, volume: Number(r.volume), reliability: Number(r.reliability), cls: classify(r) }));
-  return { hits, isPlatform, scale, modifiers: myMods };
+  const hits: Hit[] = rows.map((r: any) => ({
+    ...r, volume: Number(r.volume), reliability: Number(r.reliability), cls: classify(r),
+    // Modifier-kept rows of one partner describe the same premium cohort: parent absorbs child.
+    nest_key: nested ? `${r.partner_name}::${r.pii}::mod` : null,
+  }));
+  const contextHits: Hit[] = preMod.map((r: any) => ({
+    ...r, volume: Number(r.volume), reliability: Number(r.reliability), cls: classify(r), nest_key: null,
+  }));
+  return { hits, contextHits, isPlatform, scale, modifiers: myMods };
 }
+
 
 /* --------------------------------- scoring --------------------------------- */
 async function slice(sb: SupabaseClient, ids: string[], geos: string[], ages: string[], genders: string[], above: number | null) {
@@ -304,7 +349,7 @@ async function unionPeople(sb: SupabaseClient, rows: Hit[], volMap: Record<strin
     return r ? Number(r[modeCol(mode)]) : 0.14;
   };
 
-  type It = { partner: string; pii: string; families: string[]; vol: number; name: string };
+  type It = { partner: string; pii: string; families: string[]; vol: number; name: string; nest: string | null };
   const items: It[] = [];
   for (const r of rows) {
     const vol = (volMap[r.master_signal_id] ?? r.volume ?? 0) * Number(r.reliability || 1);
@@ -312,7 +357,7 @@ async function unionPeople(sb: SupabaseClient, rows: Hit[], volMap: Record<strin
     items.push({
       partner: r.partner_name, pii: r.pii,
       families: String(r.product_families || "").split(",").map((s) => s.trim()).filter(Boolean),
-      vol, name: String(r.signal || "").toLowerCase(),
+      vol, name: String(r.signal || "").toLowerCase(), nest: r.nest_key ?? null,
     });
   }
   const groups = new Map<string, It[]>();
@@ -327,7 +372,9 @@ async function unionPeople(sb: SupabaseClient, rows: Hit[], volMap: Record<strin
     const accF = new Set(lst[0].families);
     const accN = lst[0].name;
     for (const cur of lst.slice(1)) {
-      const nested = (cur.name.length > 6 && accN.includes(cur.name)) || (accN.length > 6 && cur.name.includes(accN));
+      const nested = cur.nest === lst[0].nest && cur.nest != null
+        ? true
+        : (cur.name.length > 6 && accN.includes(cur.name)) || (accN.length > 6 && cur.name.includes(accN));
       if (nested) continue;
       const same = cur.families.some((f) => accF.has(f));
       const rho = same ? rhoOf("R4_SAME_FAMILY") : Math.max(0.08, rhoOf("R6_DISTANT"));
@@ -461,16 +508,17 @@ async function plan(sb: SupabaseClient, ir: IR) {
   const productFamilies = anchors.filter((a) => !PLATFORM_RE.test(a.canonical)).map((a) => a.family).filter(Boolean);
 
   const scored: {
-    anchor: Anchor; hits: Hit[]; actual: number; intent: number; isPlatform: boolean; ids: string[];
+    anchor: Anchor; hits: Hit[]; contextHits: Hit[]; actual: number; intent: number; isPlatform: boolean; ids: string[];
   }[] = [];
 
   for (const a of anchors) {
     const others = PLATFORM_RE.test(a.canonical) ? productFamilies : [];
-    const { hits, isPlatform, scale } = await matchAnchor(sb, a, mods, others);
-    const ids = hits.map((h) => h.master_signal_id);
+    const { hits, contextHits, isPlatform, scale } = await matchAnchor(sb, a, mods, others);
+    const ids = [...new Set([...hits, ...contextHits].map((h) => h.master_signal_id))];
     const volMap = await slice(sb, ids, geos, ages, genders, above);
     const actualRows = hits.filter((h) => h.cls === "actual");
-    const intentRows = hits.filter((h) => h.cls === "intent");
+    // Interest-backed people come from the anchor's full list, not the modifier keep-list.
+    const intentRows = (contextHits.length ? contextHits : hits).filter((h) => h.cls === "intent");
 
     let actual = await unionPeople(sb, actualRows, volMap, ir.mode);
     const intent = await unionPeople(sb, intentRows, volMap, ir.mode);
@@ -483,7 +531,7 @@ async function plan(sb: SupabaseClient, ir: IR) {
       actual = Math.min(actual, capAll);
     }
     actual *= scale;
-    scored.push({ anchor: a, hits, actual, intent: intent * scale, isPlatform, ids });
+    scored.push({ anchor: a, hits, contextHits, actual, intent: intent * scale, isPlatform, ids });
   }
 
   const platformAnd = ir.join === "AND" && scored.length >= 2 && scored.some((s) => s.isPlatform);
@@ -507,7 +555,7 @@ async function plan(sb: SupabaseClient, ir: IR) {
     const lower = Math.max(0, a + b - pop);
     const upper = Math.min(a, b);
     people = lower + rho * (upper - lower);
-    intentPeople = Math.min(A.intent, B.intent);
+    intentPeople = Math.min(A.intent || A.actual, B.intent || B.actual);
   } else {
     const allActual = scored.flatMap((s) => s.hits.filter((h) => h.cls === "actual"));
     const allIntent = scored.flatMap((s) => s.hits.filter((h) => h.cls === "intent"));
@@ -526,9 +574,25 @@ async function plan(sb: SupabaseClient, ir: IR) {
   const peopleCapped = Math.max(0, Math.min(people, cap));
   const modelled = Math.max(peopleCapped, intentPeople);
 
-  const matched = [...allHits]
+  const perAnchor = Math.max(6, Math.floor(25 / Math.max(1, scored.length)));
+  const picked: Hit[] = [];
+  const pickedIds = new Set<string>();
+  for (const s of scored) {
+    const list = [...s.hits].sort((a, b) => b.volume - a.volume);
+    let n = 0;
+    for (const r of list) {
+      if (pickedIds.has(r.master_signal_id)) continue;
+      picked.push(r); pickedIds.add(r.master_signal_id);
+      if (++n >= perAnchor) break;
+    }
+  }
+  for (const r of [...allHits].sort((a, b) => b.volume - a.volume)) {
+    if (picked.length >= 25) break;
+    if (pickedIds.has(r.master_signal_id)) continue;
+    picked.push(r); pickedIds.add(r.master_signal_id);
+  }
+  const matched = picked
     .sort((a, b) => b.volume - a.volume)
-    .slice(0, 25)
     .map((r) => ({
       audience_signal: r.signal,
       sector: r.sector,

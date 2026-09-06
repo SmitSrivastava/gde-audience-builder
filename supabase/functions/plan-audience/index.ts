@@ -622,19 +622,11 @@ async function splits(
   return { geo: n(geo), age: n(age), gen: n(gen), total };
 }
 
-function card(rows: Hit[], pick: "top" | "tight") {
-  if (!rows.length) return null;
-  const rowPeople = (row: Hit) => Number(row.volume || 0) * Number(row.reliability || 1);
-  const sorted = [...rows].sort((a, b) => (pick === "top" ? rowPeople(b) - rowPeople(a) : rowPeople(a) - rowPeople(b)));
-  const r = sorted[0];
-  return {
-    audience_signal: r.signal, sector: r.sector, layer: r.layer,
-    partner_sources: r.partner_name, klass: r.cls, scale: Math.round(rowPeople(r)),
-  };
-}
-
 /* --------------------------------- plan --------------------------------- */
 type Baseline = { people_reach?: number; actual_people?: number; intent_people?: number } | null;
+
+const peopleOf = (r: Hit) => Number(r.volume || 0) * Number(r.reliability || 1);
+const TEST_RE = /(sample|test|dummy)/i;
 
 async function plan(
   sb: SupabaseClient,
@@ -642,6 +634,7 @@ async function plan(
   baseline: Baseline = null,
   evidence: "actual" | "intent" | null = null,
   disabledIds: string[] = [],
+  extraIds: string[] = [],
 ) {
   await loadFamilyVocab(sb);
   let geos = ir.dimensions.geo_tier || [];
@@ -662,132 +655,163 @@ async function plan(
   const productFamilies = anchors.filter((a) => !PLATFORM_RE.test(a.canonical)).map((a) => a.family).filter(Boolean);
 
   const disabled = new Set(disabledIds);
+  const extra = new Set(extraIds);
   const population = await popSlice(sb, geos, ages, genders, above);
-  const scored: {
-    anchor: Anchor; hits: Hit[]; activeHits: Hit[]; contextHits: Hit[]; actual: number; intent: number; isPlatform: boolean; ids: string[];
-  }[] = [];
 
+  /* 1. match every anchor once */
+  const matches: { anchor: Anchor; hits: Hit[]; isPlatform: boolean; scale: number; others: string[] }[] = [];
   for (const a of anchors) {
     const others = PLATFORM_RE.test(a.canonical) ? productFamilies : [];
     const m = await matchAnchor(sb, a, mods, others);
-    const { contextHits, isPlatform, scale } = m;
-    // Score the complete anchor once. Evidence is selected only after Boolean algebra,
-    // so purchase-backed and interest-backed remain mutually exclusive partitions.
-    const hits = m.hits;
-    // Every downstream metric uses the same post-modifier list shown in the table.
-    // contextHits are retained only for diagnostics and must never enter scoring or slicing.
-    const activeHits = hits.filter((hit) => !disabled.has(hit.master_signal_id));
-    const ids = [...new Set(activeHits.map((h) => h.master_signal_id))];
-    const shareMap = await sliceShares(sb, ids, geos, ages, genders, above);
-    const actualRows = activeHits.filter((h) => h.cls === "actual");
-    const intentRows = activeHits.filter((h) => h.cls === "intent");
-
-    let actual = await uniquePeopleForClass(sb, actualRows, shareMap, ir.mode, population);
-    const intent = await uniquePeopleForClass(sb, intentRows, shareMap, ir.mode, population);
-
-    if (isPlatform && !others.length) {
-      actual = await platformUniverse(sb, geos, ages, genders, above);
-    }
-    if (isPlatform) {
-      const capAll = await platformUniverse(sb, geos, ages, genders, above);
-      actual = Math.min(actual, capAll);
-    }
-    actual *= scale;
-    scored.push({ anchor: a, hits, activeHits, contextHits, actual, intent: intent * scale, isPlatform, ids });
+    matches.push({ anchor: a, hits: m.hits, isPlatform: m.isPlatform, scale: m.scale, others });
   }
 
-  let people = 0;
-  let actualPeople = 0;
-  let intentPeople = 0;
-  if (!scored.length) {
-    people = 0;
-  } else {
+  /* 2. the matched table: what the planner actually sees and ticks */
+  const perAnchor = Math.max(6, Math.floor(25 / Math.max(1, matches.length)));
+  const takenIds = new Set<string>();
+  const tableByAnchor: Hit[][] = matches.map(() => []);
+  matches.forEach((m, i) => {
+    for (const r of [...m.hits].sort((a, b) => peopleOf(b) - peopleOf(a))) {
+      if (takenIds.has(r.master_signal_id) || TEST_RE.test(r.signal)) continue;
+      takenIds.add(r.master_signal_id);
+      tableByAnchor[i].push(r);
+      if (tableByAnchor[i].length >= perAnchor) break;
+    }
+  });
+  let tableCount = tableByAnchor.reduce((s, l) => s + l.length, 0);
+  matches.forEach((m, i) => {
+    for (const r of [...m.hits].sort((a, b) => peopleOf(b) - peopleOf(a))) {
+      if (tableCount >= 25) break;
+      if (takenIds.has(r.master_signal_id) || TEST_RE.test(r.signal)) continue;
+      takenIds.add(r.master_signal_id);
+      tableByAnchor[i].push(r);
+      tableCount++;
+    }
+  });
+
+  /* 3. expand selection: catalog rows close to the anchors but outside the table */
+  const suggestionByAnchor: Hit[][] = matches.map(() => []);
+  const suggestedIds = new Set<string>();
+  matches.forEach((m, i) => {
+    for (const r of [...m.hits].sort((a, b) => Number(b.sim || 0) - Number(a.sim || 0) || peopleOf(b) - peopleOf(a))) {
+      if (takenIds.has(r.master_signal_id) || suggestedIds.has(r.master_signal_id)) continue;
+      if (TEST_RE.test(r.signal) || peopleOf(r) < 1000) continue;
+      suggestedIds.add(r.master_signal_id);
+      suggestionByAnchor[i].push(r);
+      if (suggestionByAnchor[i].length >= 12) break;
+    }
+  });
+  const suggestionRows = suggestionByAnchor.flat().slice(0, 12);
+  const suggestionKeep = new Set(suggestionRows.map((r) => r.master_signal_id));
+
+  /* 4. live set = ticked table rows + ticked suggestions */
+  const scored: { anchor: Anchor; live: Hit[]; total: number; actual: number; intent: number }[] = [];
+  for (let i = 0; i < matches.length; i++) {
+    const m = matches[i];
+    const live = [
+      ...tableByAnchor[i].filter((r) => !disabled.has(r.master_signal_id)),
+      ...suggestionByAnchor[i].filter((r) => suggestionKeep.has(r.master_signal_id) && extra.has(r.master_signal_id)),
+    ];
+    const ids = [...new Set(live.map((h) => h.master_signal_id))];
+    const shareMap = await sliceShares(sb, ids, geos, ages, genders, above);
+    let total = await uniquePeopleForClass(sb, live, shareMap, ir.mode, population);
+    let actual = await uniquePeopleForClass(sb, live.filter((h) => h.cls === "actual"), shareMap, ir.mode, population);
+    const intent = await uniquePeopleForClass(sb, live.filter((h) => h.cls === "intent"), shareMap, ir.mode, population);
+
+    if (m.isPlatform) {
+      const capAll = await platformUniverse(sb, geos, ages, genders, above);
+      if (!m.others.length) actual = capAll;
+      actual = Math.min(actual, capAll);
+      total = Math.max(total, actual);
+    }
+    scored.push({
+      anchor: m.anchor,
+      live,
+      total: Math.min(total * m.scale, population),
+      actual: actual * m.scale,
+      intent: intent * m.scale,
+    });
+  }
+
+  /* 5. Boolean algebra across anchors */
+  let people = 0, actualPeople = 0, intentPeople = 0;
+  if (scored.length) {
+    people = scored[0].total;
     actualPeople = scored[0].actual;
     intentPeople = scored[0].intent;
     let family = scored[0].anchor.family;
     for (const current of scored.slice(1)) {
       const rho = await pairRho(sb, family, current.anchor.family);
-      if (ir.join === "AND") {
-        actualPeople = boundedIntersection(actualPeople, current.actual, population, rho);
-        intentPeople = boundedIntersection(intentPeople, current.intent, population, rho);
-      } else {
-        actualPeople = boundedUnion(actualPeople, current.actual, population, rho);
-        intentPeople = boundedUnion(intentPeople, current.intent, population, rho);
-      }
+      const op = ir.join === "AND" ? boundedIntersection : boundedUnion;
+      people = op(people, current.total, population, rho);
+      actualPeople = op(actualPeople, current.actual, population, rho);
+      intentPeople = op(intentPeople, current.intent, population, rho);
       family = current.anchor.family;
     }
 
     for (const excluded of await exclusionAnchors(sb, ir.exclusions || [])) {
-      const matched = await matchAnchor(sb, excluded, [], []);
-      const ids = [...new Set(matched.hits.map((hit) => hit.master_signal_id))];
+      const matchedX = await matchAnchor(sb, excluded, [], []);
+      const ids = [...new Set(matchedX.hits.map((hit) => hit.master_signal_id))];
       const shares = await sliceShares(sb, ids, geos, ages, genders, above);
-      const excludedActual = await uniquePeopleForClass(sb, matched.hits.filter((hit) => hit.cls === "actual"), shares, ir.mode, population);
-      const excludedIntent = await uniquePeopleForClass(sb, matched.hits.filter((hit) => hit.cls === "intent"), shares, ir.mode, population);
+      const xTotal = await uniquePeopleForClass(sb, matchedX.hits, shares, ir.mode, population);
+      const xActual = await uniquePeopleForClass(sb, matchedX.hits.filter((h) => h.cls === "actual"), shares, ir.mode, population);
+      const xIntent = await uniquePeopleForClass(sb, matchedX.hits.filter((h) => h.cls === "intent"), shares, ir.mode, population);
       const rho = await pairRho(sb, family, excluded.family);
-      actualPeople = subtractAudience(actualPeople, excludedActual, population, rho);
-      intentPeople = subtractAudience(intentPeople, excludedIntent, population, rho);
+      people = subtractAudience(people, xTotal, population, rho);
+      actualPeople = subtractAudience(actualPeople, xActual, population, rho);
+      intentPeople = subtractAudience(intentPeople, xIntent, population, rho);
     }
-    // The headline is purchase-backed people. Interest is a separate overlapping
-    // population and must never be added to purchase.
-    people = actualPeople;
   }
+  // Purchase and interest are overlapping subsets of the same de-duplicated people.
+  actualPeople = Math.min(actualPeople, people);
+  intentPeople = Math.min(intentPeople, people);
 
-  const displayHits = scored.flatMap((s) => s.hits);
-  const allHits = scored.flatMap((s) => s.activeHits).filter((hit) => evidence ? hit.cls === evidence : hit.cls === "actual");
-  const allIds = [...new Set(allHits.map((h) => h.master_signal_id))];
+  const liveHits = scored.flatMap((s) => s.live);
+  const evidenceHits = evidence ? liveHits.filter((h) => h.cls === evidence) : liveHits;
+  const allIds = [...new Set(evidenceHits.map((h) => h.master_signal_id))];
   const volOf: Record<string, number> = {};
-  for (const h of allHits) volOf[h.master_signal_id] = Number(h.volume || 0) * Number(h.reliability || 1);
+  for (const h of evidenceHits) volOf[h.master_signal_id] = peopleOf(h);
   const mix = await splits(sb, allIds, geos, ages, genders, above, volOf);
-  // Share of the audience that survives the filter, measured once on the cube.
   const filtered = !!(geos.length || ages.length || genders.length || above != null);
   const mixAll = filtered ? await splits(sb, allIds, [], [], [], null, volOf) : mix;
   const keepShare = filtered && mixAll.total > 0 ? Math.min(1, mix.total / mixAll.total) : 1;
   const cap = await popSlice(sb, geos, ages, genders, above);
-  let peopleCapped = Math.max(0, Math.min(people, cap));
 
-
-  const perAnchor = Math.max(6, Math.floor(25 / Math.max(1, scored.length)));
-  const picked: Hit[] = [];
-  const pickedIds = new Set<string>();
-  for (const s of scored) {
-    const list = s.hits.sort((a, b) => b.volume * b.reliability - a.volume * a.reliability);
-    let n = 0;
-    for (const r of list) {
-      if (pickedIds.has(r.master_signal_id)) continue;
-      picked.push(r); pickedIds.add(r.master_signal_id);
-      if (++n >= perAnchor) break;
-    }
+  // Invariant: a narrowed audience can never exceed the unfiltered one.
+  if (baseline && Number(baseline.people_reach) > 0 && filtered) {
+    people = Math.min(people, Number(baseline.people_reach) * keepShare);
+    actualPeople = Math.min(actualPeople, Number(baseline.actual_people || 0) * keepShare);
+    intentPeople = Math.min(intentPeople, Number(baseline.intent_people || 0) * keepShare);
   }
-  for (const r of [...displayHits].sort((a, b) => b.volume * b.reliability - a.volume * a.reliability)) {
-    if (picked.length >= 25) break;
-    if (pickedIds.has(r.master_signal_id)) continue;
-    picked.push(r); pickedIds.add(r.master_signal_id);
-  }
-  const matched = picked
-    .sort((a, b) => b.volume - a.volume)
-    .map((r) => ({
-      audience_signal: r.signal,
-      sector: r.sector,
-      layer: r.layer,
-      partner_sources: r.partner_name,
-      klass: r.cls === "actual" ? "Actual" : "Intent",
-      scale: Math.round(r.volume * Number(r.reliability || 1)),
-      master_signal_id: r.master_signal_id,
-      selected: !disabled.has(r.master_signal_id),
-    }));
 
-  const primaryPool = scored[0]?.activeHits.filter((hit) => !evidence || hit.cls === evidence) || [];
-  const primaryRows = primaryPool.filter((h) => h.cls === "actual");
-  const primary = card(primaryRows.length ? primaryRows : primaryPool, "top");
-  const expansionRows = scored[1]?.activeHits.filter((hit) => !evidence || hit.cls === evidence) || primaryPool.filter((h) => h.cls === "intent");
-  const expansion = card(expansionRows, "top");
-  const modTokens = mods.map((m) => squash(m.token));
-  const precisionRows = allHits.filter((h) => modTokens.some((t) => t && squash(`${h.signal} ${h.sub_category}`).includes(t)));
-  const precision = card(
-    (precisionRows.length ? precisionRows : allHits.filter((h) => h.reliability >= 0.7))
-      .filter((h) => Number(h.volume) * Number(h.reliability) >= 10000),
-    "top",
-  );
+  people = Math.max(0, Math.min(people, cap));
+  actualPeople = Math.min(actualPeople, people);
+  intentPeople = Math.min(intentPeople, people);
+
+  // The evidence toggle is a subset of the same result, never a new calculation.
+  const headline = evidence === "actual" ? actualPeople : evidence === "intent" ? intentPeople : people;
+
+  const geo_split = Object.entries(mix.geo).map(([k, sh]) => ({ geo_tier: k, volume: Math.round(headline * sh), share: round4(sh) }));
+  const age_split = Object.entries(mix.age).map(([k, sh]) => ({ age_bucket: k, volume: Math.round(headline * sh), share: round4(sh) }));
+  const gender_split = Object.entries(mix.gen).map(([k, sh]) => ({ gender_bucket: k, volume: Math.round(headline * sh), share: round4(sh) }));
+
+  const rowOut = (r: Hit, selected: boolean) => ({
+    audience_signal: r.signal,
+    sector: r.sector,
+    layer: r.layer,
+    partner_sources: r.partner_name,
+    klass: r.cls === "actual" ? "Actual" : "Intent",
+    scale: Math.round(peopleOf(r)),
+    master_signal_id: r.master_signal_id,
+    selected,
+  });
+  const tableRows = tableByAnchor.flat()
+    .filter((r) => !evidence || r.cls === evidence)
+    .sort((a, b) => peopleOf(b) - peopleOf(a))
+    .map((r) => rowOut(r, !disabled.has(r.master_signal_id)));
+  const suggestions = suggestionRows
+    .filter((r) => !evidence || r.cls === evidence)
+    .map((r) => rowOut(r, extra.has(r.master_signal_id)));
 
   const modLine = mods.length
     ? mods.map((m) => {
@@ -804,38 +828,6 @@ async function plan(
     above != null ? `Above ${above}` : null,
   ].filter(Boolean);
 
-  peopleCapped = Math.min(actualPeople, cap);
-
-  // Invariant: a narrowed audience can never exceed the unfiltered one.
-  if (baseline && Number(baseline.people_reach) > 0) {
-    // Filtering is a restriction of the unfiltered audience by its cube share, so the
-    // parts always add back up to the whole.
-    const capTotal = Number(baseline.actual_people || baseline.people_reach || 0) * keepShare;
-    const capIntent = Number(baseline.intent_people || 0) * keepShare;
-    if (filtered && capTotal > 0) {
-      const k0 = capTotal / (peopleCapped || capTotal);
-      peopleCapped = capTotal;
-      actualPeople *= k0;
-      intentPeople *= k0;
-    }
-    if (peopleCapped > capTotal) {
-      const k = capTotal / peopleCapped;
-      peopleCapped = capTotal;
-      actualPeople *= k;
-      intentPeople *= k;
-    }
-    if (!evidence && Number(baseline.actual_people) >= 0) actualPeople = Math.min(actualPeople, Number(baseline.actual_people));
-    if (!evidence && Number(baseline.intent_people) >= 0) intentPeople = Math.min(intentPeople, Number(baseline.intent_people));
-    if (filtered && capIntent > 0) intentPeople = Math.min(intentPeople, capIntent);
-  }
-
-  actualPeople = Math.min(actualPeople, cap);
-  intentPeople = Math.min(intentPeople, cap);
-  peopleCapped = actualPeople;
-
-  const geo_split = Object.entries(mix.geo).map(([k, sh]) => ({ geo_tier: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
-  const age_split = Object.entries(mix.age).map(([k, sh]) => ({ age_bucket: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
-  const gender_split = Object.entries(mix.gen).map(([k, sh]) => ({ gender_bucket: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
   const includedLabel = anchors.map((a) => title(a.canonical)).join(` ${ir.join} `) || "—";
   const exclusionLabel = (ir.exclusions || []).map((value) => title(canonicalAnchor(value))).filter(Boolean);
   const baseCohort = exclusionLabel.length ? `${includedLabel} EXCLUDING ${exclusionLabel.join(" AND ")}` : includedLabel;
@@ -846,18 +838,17 @@ async function plan(
     modifier_line: modLine,
     dimension_line: dimBits.length ? dimBits.join(" · ") : "none",
     evidence,
-    people_reach: Math.round(peopleCapped),
+    people_reach: Math.round(headline),
+    total_people: Math.round(people),
     actual_people: Math.round(actualPeople),
     intent_people: Math.round(intentPeople),
-    india_intelligence: Math.round(peopleCapped),
-    identifier_reach: Math.round(peopleCapped),
-    planning_confidence: allHits.some((r) => r.reliability >= 0.7 && Number(r.volume) * Number(r.reliability) >= 10000) ? "High" : "Medium",
-    matched_signals: matched,
-    primary_audience: primary,
-    expansion_audience: expansion,
-    precision_audience: precision,
+    india_intelligence: Math.round(headline),
+    identifier_reach: Math.round(headline),
+    planning_confidence: liveHits.some((r) => r.reliability >= 0.7 && peopleOf(r) >= 10000) ? "High" : "Medium",
+    matched_signals: tableRows,
+    suggested_signals: suggestions,
     geo_split, age_split, gender_split,
-    partners: [...new Set(allHits.map((h) => h.partner_name))],
+    partners: [...new Set(evidenceHits.map((h) => h.partner_name))],
     session: {
       matched_ids: allIds.slice(0, 400),
       anchors: anchors.map((a) => a.canonical),
@@ -870,15 +861,15 @@ async function plan(
       modifiers: mods,
       rules: [
         `Anchors: ${anchors.map((a) => title(a.canonical)).join(` ${ir.join} `)}`,
-        `Unique purchase people after nesting and partner overlap: ${Math.round(actualPeople).toLocaleString("en-IN")}`,
-        `Unique interest people shown separately, not added: ${Math.round(intentPeople).toLocaleString("en-IN")}`,
+        `Headline is one de-duplicated set of people covering purchase and interest evidence together: ${Math.round(people).toLocaleString("en-IN")}`,
+        `Purchase-backed inside it: ${Math.round(actualPeople).toLocaleString("en-IN")} · interest-backed inside it: ${Math.round(intentPeople).toLocaleString("en-IN")} (overlapping subsets, never added)`,
         anchors.length < 2
-          ? "The headline is unique purchase people; interest is not added."
+          ? "Single anchor: people counted once after phone/device de-duplication and partner overlap."
           : ir.join === "AND"
-          ? "The headline is the purchase intersection."
-          : "The headline is the purchase union: A + B − intersection.",
+          ? "Two or more anchors combined as an intersection A ∩ B."
+          : "Two or more anchors combined as a union A + B − (A ∩ B).",
         ...(exclusionLabel.length ? [`Excludes overlap with ${exclusionLabel.join(" and ")}`] : []),
-        "Presented as a unified addressable audience",
+        `${liveHits.length} of ${tableByAnchor.flat().length} table signals in the scale${extra.size ? ` plus ${extra.size} added from expand selection` : ""}`,
       ],
     },
   };
@@ -887,3 +878,4 @@ async function plan(
 function title(s: string) {
   return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
+

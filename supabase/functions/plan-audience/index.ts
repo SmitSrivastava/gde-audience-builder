@@ -231,8 +231,11 @@ serve(async (req) => {
 const ENGINE_VERSION = "v15-boolean-labels";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
+    const disabledIds = Array.isArray(body.disabled_ids)
+      ? body.disabled_ids.map(String).sort()
+      : [];
     const irHash = await sha256(
-      ENGINE_VERSION + semanticIrKey(ir as unknown as Record<string, unknown>) + JSON.stringify(body.baseline ?? null) + String(evidence),
+      ENGINE_VERSION + semanticIrKey(ir as unknown as Record<string, unknown>) + JSON.stringify(body.baseline ?? null) + String(evidence) + JSON.stringify(disabledIds),
     );
     const cached = await sb.from("result_cache").select("payload").eq("query_ir_hash", irHash).maybeSingle();
     if (cached.data?.payload) {
@@ -241,7 +244,7 @@ const ENGINE_VERSION = "v15-boolean-labels";
       });
     }
 
-    const payload = await plan(sb, ir, body.baseline ?? null, evidence);
+    const payload = await plan(sb, ir, body.baseline ?? null, evidence, disabledIds);
     await sb.from("result_cache").upsert({ query_ir_hash: irHash, query_ir: ir, payload });
     return new Response(JSON.stringify({ ...payload, source, cached: false }), {
       headers: { ...CORS, "Content-Type": "application/json" },
@@ -423,7 +426,13 @@ async function sliceShares(
   return out;
 }
 
-async function unionPeople(sb: SupabaseClient, rows: Hit[], shareMap: Record<string, number>, mode: IR["mode"]) {
+async function uniquePeopleForClass(
+  sb: SupabaseClient,
+  rows: Hit[],
+  shareMap: Record<string, number>,
+  mode: IR["mode"],
+  population: number,
+) {
   if (!rows.length) return 0;
   const [{ data: intra }, { data: pr }, { data: uni }] = await Promise.all([
     sb.from("intra_overlap_rule").select("*"),
@@ -435,7 +444,7 @@ async function unionPeople(sb: SupabaseClient, rows: Hit[], shareMap: Record<str
     return r ? Number(r[modeCol(mode)]) : 0.14;
   };
 
-  type It = { partner: string; pii: string; families: string[]; vol: number; name: string; nest: string | null };
+  type It = { partner: string; pii: string; families: string[]; sector: string; vol: number; name: string; nest: string | null };
   const items: It[] = [];
   for (const r of rows) {
     const share = shareMap[r.master_signal_id] ?? 0;
@@ -443,64 +452,70 @@ async function unionPeople(sb: SupabaseClient, rows: Hit[], shareMap: Record<str
     if (vol <= 0) continue;
     items.push({
       partner: r.partner_name, pii: r.pii,
-      families: String(r.product_families || "").split(",").map((s) => s.trim()).filter(Boolean),
+      families: String(r.product_families || "").split(",").map((s) => s.trim()).filter(Boolean), sector: String(r.sector || ""),
       vol, name: String(r.signal || "").toLowerCase(), nest: r.nest_key ?? null,
     });
   }
 
-  const groups = new Map<string, It[]>();
+  // The same partner signal/SKU represented by phone and device is one person set.
+  const identifierGroups = new Map<string, It[]>();
   for (const it of items) {
-    const k = `${it.partner}::${it.pii}`;
-    groups.set(k, [...(groups.get(k) || []), it]);
+    const key = `${it.partner}::${squash(it.name)}::${it.nest || ""}`;
+    identifierGroups.set(key, [...(identifierGroups.get(key) || []), it]);
   }
-  const nodes: { partner: string; pii: string; people: number; families: Set<string> }[] = [];
-  for (const [k, lst0] of groups) {
+  const deduped: It[] = [];
+  for (const group of identifierGroups.values()) {
+    const largest = [...group].sort((a, b) => b.vol - a.vol)[0];
+    deduped.push({ ...largest, vol: Math.max(...group.map((row) => row.vol)) });
+  }
+
+  // Within one partner and evidence class, smaller same-family/sector rows are
+  // mostly nested inside the largest row; they are never blindly summed.
+  const groups = new Map<string, It[]>();
+  for (const it of deduped) groups.set(it.partner, [...(groups.get(it.partner) || []), it]);
+  const nodes: { partner: string; people: number; families: Set<string>; sectors: Set<string> }[] = [];
+  for (const [partner, lst0] of groups) {
     const lst = [...lst0].sort((a, b) => b.vol - a.vol);
     let u = lst[0].vol;
     const accF = new Set(lst[0].families);
-    const accN = lst[0].name;
+    const accS = new Set([lst[0].sector].filter(Boolean));
     for (const cur of lst.slice(1)) {
-      const nested = cur.nest === lst[0].nest && cur.nest != null
-        ? true
-        : (cur.name.length > 6 && accN.includes(cur.name)) || (accN.length > 6 && cur.name.includes(accN));
-      if (nested) continue;
-      const same = cur.families.some((f) => accF.has(f));
-      const rho = same ? rhoOf("R4_SAME_FAMILY") : Math.max(0.08, rhoOf("R6_DISTANT"));
+      const sameFamily = cur.families.some((f) => accF.has(f));
+      const sameSector = !!cur.sector && accS.has(cur.sector);
+      const rho = sameFamily || sameSector ? 0.85 : Math.max(0.35, rhoOf("R5_SIBLING"));
       u += cur.vol * (1 - Math.min(0.95, rho));
       cur.families.forEach((f) => accF.add(f));
+      if (cur.sector) accS.add(cur.sector);
     }
-    const [partner, pii] = k.split("::");
-    const cap = (uni || []).find((x: any) => x.partner_name === partner && x.pii === pii);
-    if (cap) u = Math.min(u, Number(cap.universe));
+    const caps = (uni || []).filter((x: any) => x.partner_name === partner).map((x: any) => Number(x.universe));
+    if (caps.length) u = Math.min(u, Math.max(...caps));
     u = Math.min(u, lst.reduce((s, x) => s + x.vol, 0));
-    nodes.push({ partner, pii, people: u, families: accF });
+    nodes.push({ partner, people: u, families: accF, sectors: accS });
   }
 
-  // Identifiers of the same partner (phone / device) are the same people -> MAX, never add.
-  const byP = new Map<string, typeof nodes>();
-  for (const n of nodes) byP.set(n.partner, [...(byP.get(n.partner) || []), n]);
-  const peopleNodes: { partner: string; people: number; families: Set<string> }[] = [];
-  for (const [partner, arr] of byP) {
-    const fams = new Set<string>();
-    arr.forEach((x) => x.families.forEach((f) => fams.add(f)));
-    peopleNodes.push({ partner, people: Math.max(...arr.map((x) => x.people)), families: fams });
-  }
-  peopleNodes.sort((a, b) => b.people - a.people);
-  let reach = peopleNodes[0].people;
-  const accF = new Set(peopleNodes[0].families);
-  const accP = peopleNodes[0].partner;
-  for (const n of peopleNodes.slice(1)) {
+  // Across partners, add only the non-overlapping remainder of each partner audience.
+  nodes.sort((a, b) => b.people - a.people);
+  let reach = nodes[0].people;
+  const accF = new Set(nodes[0].families);
+  const accS = new Set(nodes[0].sectors);
+  const priorPartners = [nodes[0].partner];
+  for (const n of nodes.slice(1)) {
     const same = [...n.families].some((f) => accF.has(f));
-    const rel = same ? "same_family" : "distant_family";
-    const rec = (pr || []).find((x: any) =>
-      ((x.partner_a === accP && x.partner_b === n.partner) || (x.partner_b === accP && x.partner_a === n.partner)) &&
+    const sameSector = [...n.sectors].some((sector) => accS.has(sector));
+    const rel = same ? "same_family" : sameSector ? "sibling_family" : "distant_family";
+    const candidates = (pr || []).filter((x: any) => priorPartners.some((partner) =>
+      ((x.partner_a === partner && x.partner_b === n.partner) || (x.partner_b === partner && x.partner_a === n.partner)) &&
       x.attribute_relation === rel
-    );
-    const rho = rec ? Number(rec.rho_same_pii) : 0.10;
-    reach += n.people * (1 - Math.min(0.85, Math.max(0.02, rho)));
+    ));
+    const stored = Math.max(0, ...candidates.map((x: any) => Number(x.rho_same_pii || x.base_rho || 0)));
+    const rho = same ? Math.min(0.70, Math.max(0.55, stored)) : Math.min(0.85, Math.max(0.08, stored));
+    const overlap = rho * Math.min(reach, n.people);
+    reach += n.people - overlap;
     n.families.forEach((f) => accF.add(f));
+    n.sectors.forEach((sector) => accS.add(sector));
+    priorPartners.push(n.partner);
   }
-  return reach;
+  return Math.min(reach, population);
 }
 
 async function pairRho(sb: SupabaseClient, familyA: string, familyB: string) {
@@ -609,18 +624,25 @@ async function splits(
 
 function card(rows: Hit[], pick: "top" | "tight") {
   if (!rows.length) return null;
-  const sorted = [...rows].sort((a, b) => (pick === "top" ? b.volume - a.volume : a.volume - b.volume));
+  const rowPeople = (row: Hit) => Number(row.volume || 0) * Number(row.reliability || 1);
+  const sorted = [...rows].sort((a, b) => (pick === "top" ? rowPeople(b) - rowPeople(a) : rowPeople(a) - rowPeople(b)));
   const r = sorted[0];
   return {
     audience_signal: r.signal, sector: r.sector, layer: r.layer,
-    partner_sources: r.partner_name, klass: r.cls, scale: Math.round(r.volume),
+    partner_sources: r.partner_name, klass: r.cls, scale: Math.round(rowPeople(r)),
   };
 }
 
 /* --------------------------------- plan --------------------------------- */
 type Baseline = { people_reach?: number; actual_people?: number; intent_people?: number } | null;
 
-async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evidence: "actual" | "intent" | null = null) {
+async function plan(
+  sb: SupabaseClient,
+  ir: IR,
+  baseline: Baseline = null,
+  evidence: "actual" | "intent" | null = null,
+  disabledIds: string[] = [],
+) {
   await loadFamilyVocab(sb);
   let geos = ir.dimensions.geo_tier || [];
 
@@ -639,8 +661,10 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
   const anchors = ir.anchors || [];
   const productFamilies = anchors.filter((a) => !PLATFORM_RE.test(a.canonical)).map((a) => a.family).filter(Boolean);
 
+  const disabled = new Set(disabledIds);
+  const population = await popSlice(sb, geos, ages, genders, above);
   const scored: {
-    anchor: Anchor; hits: Hit[]; contextHits: Hit[]; actual: number; intent: number; isPlatform: boolean; ids: string[];
+    anchor: Anchor; hits: Hit[]; activeHits: Hit[]; contextHits: Hit[]; actual: number; intent: number; isPlatform: boolean; ids: string[];
   }[] = [];
 
   for (const a of anchors) {
@@ -652,13 +676,14 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
     const hits = m.hits;
     // Every downstream metric uses the same post-modifier list shown in the table.
     // contextHits are retained only for diagnostics and must never enter scoring or slicing.
-    const ids = [...new Set(hits.map((h) => h.master_signal_id))];
+    const activeHits = hits.filter((hit) => !disabled.has(hit.master_signal_id));
+    const ids = [...new Set(activeHits.map((h) => h.master_signal_id))];
     const shareMap = await sliceShares(sb, ids, geos, ages, genders, above);
-    const actualRows = hits.filter((h) => h.cls === "actual");
-    const intentRows = hits.filter((h) => h.cls === "intent");
+    const actualRows = activeHits.filter((h) => h.cls === "actual");
+    const intentRows = activeHits.filter((h) => h.cls === "intent");
 
-    let actual = await unionPeople(sb, actualRows, shareMap, ir.mode);
-    const intent = await unionPeople(sb, intentRows, shareMap, ir.mode);
+    let actual = await uniquePeopleForClass(sb, actualRows, shareMap, ir.mode, population);
+    const intent = await uniquePeopleForClass(sb, intentRows, shareMap, ir.mode, population);
 
     if (isPlatform && !others.length) {
       actual = await platformUniverse(sb, geos, ages, genders, above);
@@ -668,7 +693,7 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
       actual = Math.min(actual, capAll);
     }
     actual *= scale;
-    scored.push({ anchor: a, hits, contextHits, actual, intent: intent * scale, isPlatform, ids });
+    scored.push({ anchor: a, hits, activeHits, contextHits, actual, intent: intent * scale, isPlatform, ids });
   }
 
   let people = 0;
@@ -677,19 +702,17 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
   if (!scored.length) {
     people = 0;
   } else {
-    const pop = await popSlice(sb, [], [], [], null);
-    people = scored[0].actual + scored[0].intent;
     actualPeople = scored[0].actual;
+    intentPeople = scored[0].intent;
     let family = scored[0].anchor.family;
     for (const current of scored.slice(1)) {
       const rho = await pairRho(sb, family, current.anchor.family);
-      const total = current.actual + current.intent;
       if (ir.join === "AND") {
-        people = boundedIntersection(people, total, pop, rho);
-        actualPeople = boundedIntersection(actualPeople, current.actual, pop, rho);
+        actualPeople = boundedIntersection(actualPeople, current.actual, population, rho);
+        intentPeople = boundedIntersection(intentPeople, current.intent, population, rho);
       } else {
-        people = boundedUnion(people, total, pop, rho);
-        actualPeople = boundedUnion(actualPeople, current.actual, pop, rho);
+        actualPeople = boundedUnion(actualPeople, current.actual, population, rho);
+        intentPeople = boundedUnion(intentPeople, current.intent, population, rho);
       }
       family = current.anchor.family;
     }
@@ -698,19 +721,19 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
       const matched = await matchAnchor(sb, excluded, [], []);
       const ids = [...new Set(matched.hits.map((hit) => hit.master_signal_id))];
       const shares = await sliceShares(sb, ids, geos, ages, genders, above);
-      const excludedActual = await unionPeople(sb, matched.hits.filter((hit) => hit.cls === "actual"), shares, ir.mode);
-      const excludedIntent = await unionPeople(sb, matched.hits.filter((hit) => hit.cls === "intent"), shares, ir.mode);
+      const excludedActual = await uniquePeopleForClass(sb, matched.hits.filter((hit) => hit.cls === "actual"), shares, ir.mode, population);
+      const excludedIntent = await uniquePeopleForClass(sb, matched.hits.filter((hit) => hit.cls === "intent"), shares, ir.mode, population);
       const rho = await pairRho(sb, family, excluded.family);
-      people = subtractAudience(people, excludedActual + excludedIntent, pop, rho);
-      actualPeople = subtractAudience(actualPeople, excludedActual, pop, rho);
+      actualPeople = subtractAudience(actualPeople, excludedActual, population, rho);
+      intentPeople = subtractAudience(intentPeople, excludedIntent, population, rho);
     }
-    const parts = reconcileReach(people, actualPeople);
-    people = parts.total;
-    actualPeople = parts.actual;
-    intentPeople = parts.intent;
+    // The headline is purchase-backed people. Interest is a separate overlapping
+    // population and must never be added to purchase.
+    people = actualPeople;
   }
 
-  const allHits = scored.flatMap((s) => s.hits).filter((hit) => !evidence || hit.cls === evidence);
+  const displayHits = scored.flatMap((s) => s.hits);
+  const allHits = scored.flatMap((s) => s.activeHits).filter((hit) => evidence ? hit.cls === evidence : hit.cls === "actual");
   const allIds = [...new Set(allHits.map((h) => h.master_signal_id))];
   const volOf: Record<string, number> = {};
   for (const h of allHits) volOf[h.master_signal_id] = Number(h.volume || 0) * Number(h.reliability || 1);
@@ -727,7 +750,7 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
   const picked: Hit[] = [];
   const pickedIds = new Set<string>();
   for (const s of scored) {
-    const list = s.hits.filter((hit) => !evidence || hit.cls === evidence).sort((a, b) => b.volume - a.volume);
+    const list = s.hits.sort((a, b) => b.volume * b.reliability - a.volume * a.reliability);
     let n = 0;
     for (const r of list) {
       if (pickedIds.has(r.master_signal_id)) continue;
@@ -735,7 +758,7 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
       if (++n >= perAnchor) break;
     }
   }
-  for (const r of [...allHits].sort((a, b) => b.volume - a.volume)) {
+  for (const r of [...displayHits].sort((a, b) => b.volume * b.reliability - a.volume * a.reliability)) {
     if (picked.length >= 25) break;
     if (pickedIds.has(r.master_signal_id)) continue;
     picked.push(r); pickedIds.add(r.master_signal_id);
@@ -750,12 +773,13 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
       klass: r.cls === "actual" ? "Actual" : "Intent",
       scale: Math.round(r.volume * Number(r.reliability || 1)),
       master_signal_id: r.master_signal_id,
+      selected: !disabled.has(r.master_signal_id),
     }));
 
-  const primaryPool = scored[0]?.hits.filter((hit) => !evidence || hit.cls === evidence) || [];
+  const primaryPool = scored[0]?.activeHits.filter((hit) => !evidence || hit.cls === evidence) || [];
   const primaryRows = primaryPool.filter((h) => h.cls === "actual");
   const primary = card(primaryRows.length ? primaryRows : primaryPool, "top");
-  const expansionRows = scored[1]?.hits.filter((hit) => !evidence || hit.cls === evidence) || primaryPool.filter((h) => h.cls === "intent");
+  const expansionRows = scored[1]?.activeHits.filter((hit) => !evidence || hit.cls === evidence) || primaryPool.filter((h) => h.cls === "intent");
   const expansion = card(expansionRows, "top");
   const modTokens = mods.map((m) => squash(m.token));
   const precisionRows = allHits.filter((h) => modTokens.some((t) => t && squash(`${h.signal} ${h.sub_category}`).includes(t)));
@@ -776,10 +800,7 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
     above != null ? `Above ${above}` : null,
   ].filter(Boolean);
 
-  let selected = selectEvidence(reconcileReach(peopleCapped, actualPeople), evidence);
-  peopleCapped = selected.total;
-  actualPeople = selected.actual;
-  intentPeople = selected.intent;
+  peopleCapped = evidence === "intent" ? Math.min(intentPeople, cap) : Math.min(actualPeople, cap);
 
   // Invariant: a narrowed audience can never exceed the unfiltered one.
   if (baseline && Number(baseline.people_reach) > 0) {
@@ -807,10 +828,9 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
     if (!evidence && Number(baseline.intent_people) >= 0) intentPeople = Math.min(intentPeople, Number(baseline.intent_people));
   }
 
-  selected = selectEvidence(reconcileReach(peopleCapped, actualPeople), evidence);
-  peopleCapped = selected.total;
-  actualPeople = selected.actual;
-  intentPeople = selected.intent;
+  actualPeople = Math.min(actualPeople, cap);
+  intentPeople = Math.min(intentPeople, cap);
+  peopleCapped = evidence === "intent" ? intentPeople : actualPeople;
 
   const geo_split = Object.entries(mix.geo).map(([k, sh]) => ({ geo_tier: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
   const age_split = Object.entries(mix.age).map(([k, sh]) => ({ age_bucket: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
@@ -830,7 +850,7 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
     intent_people: Math.round(intentPeople),
     india_intelligence: Math.round(peopleCapped),
     identifier_reach: Math.round(peopleCapped),
-    planning_confidence: allHits.some((r) => r.reliability >= 0.7) ? "High" : "Medium",
+    planning_confidence: allHits.some((r) => r.reliability >= 0.7 && Number(r.volume) * Number(r.reliability) >= 10000) ? "High" : "Medium",
     matched_signals: matched,
     primary_audience: primary,
     expansion_audience: expansion,
@@ -848,9 +868,10 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
       exclusions: ir.exclusions || [],
       modifiers: mods,
       rules: [
-        "Built from relevant partner audience signals",
-        "Each qualifier is applied to the audience it describes",
-        ir.join === "AND" ? "Includes people who meet every selected audience condition" : "Includes people who meet any selected audience condition",
+        `Anchors: ${anchors.map((a) => title(a.canonical)).join(` ${ir.join} `)}`,
+        `Unique purchase people after nesting and partner overlap: ${Math.round(actualPeople).toLocaleString("en-IN")}`,
+        `Unique interest people shown separately, not added: ${Math.round(intentPeople).toLocaleString("en-IN")}`,
+        ir.join === "AND" ? "The headline is the purchase intersection." : "The headline is the purchase union: A + B − intersection.",
         ...(exclusionLabel.length ? [`Excludes overlap with ${exclusionLabel.join(" and ")}`] : []),
         "Presented as a unified addressable audience",
       ],

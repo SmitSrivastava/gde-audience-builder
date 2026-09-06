@@ -63,7 +63,7 @@ async function pass1(sb: SupabaseClient, brief: string): Promise<IR | null> {
     const tok = String(s.token).toLowerCase();
     if (!has(tok)) continue;
     if (seenFam.has(s.family)) {
-      const a = anchors.find((x) => x.family === String(s.family).toLowerCase())!;
+      const a = anchors.find((x) => x.family === String(s.family).toLowerCase());
       if (a && !a.tokens.includes(tok)) a.tokens.push(tok);
       continue;
     }
@@ -538,6 +538,7 @@ async function plan(sb: SupabaseClient, ir: IR) {
   const platformAnd = ir.join === "AND" && scored.length >= 2 && scored.some((s) => s.isPlatform);
 
   let people = 0;
+  let actualPeople = 0;
   let intentPeople = 0;
   if (!scored.length) {
     people = 0;
@@ -545,7 +546,8 @@ async function plan(sb: SupabaseClient, ir: IR) {
     // Platform x family: the platform's own rows in that family already ARE the intersection.
     const p = scored.find((s) => s.isPlatform)!;
     people = p.actual || p.intent;
-    intentPeople = p.intent;
+    actualPeople = p.actual;
+    intentPeople = Math.max(0, people - actualPeople);
   } else if (ir.join === "AND" && scored.length >= 2) {
     const A = scored[0], B = scored[1];
     const { data } = await sb.from("and_intersect_rho").select("*")
@@ -563,9 +565,10 @@ async function plan(sb: SupabaseClient, ir: IR) {
       const classLower = Math.max(0, left + right - pop);
       return classLower + rho * (Math.min(left, right) - classLower);
     };
-    const actualPeople = joinClass(A.actual, B.actual);
-    intentPeople = joinClass(A.intent, B.intent);
-    people = Math.max(people, actualPeople, intentPeople);
+    actualPeople = joinClass(A.actual, B.actual);
+    // A joined audience is purchase-backed only where every side has purchase evidence.
+    // Any remaining joined reach is interest-backed, including purchase × affinity joins.
+    intentPeople = Math.max(0, people - actualPeople);
   } else {
     const allActual = scored.flatMap((s) => s.hits.filter((h) => h.cls === "actual"));
     const allIntent = scored.flatMap((s) => s.hits.filter((h) => h.cls === "intent"));
@@ -574,6 +577,7 @@ async function plan(sb: SupabaseClient, ir: IR) {
     people = scored.some((s) => s.isPlatform)
       ? Math.max(...scored.map((s) => s.actual))
       : await unionPeople(sb, allActual, volMap, ir.mode);
+    actualPeople = people;
     intentPeople = await unionPeople(sb, allIntent, volMap, ir.mode);
   }
 
@@ -640,13 +644,8 @@ async function plan(sb: SupabaseClient, ir: IR) {
     above != null ? `Above ${above}` : null,
   ].filter(Boolean);
 
-  const actualPeople = ir.join === "AND" && scored.length >= 2
-    ? (() => {
-      const A = scored[0], B = scored[1];
-      if (A.actual <= 0 || B.actual <= 0) return 0;
-      return Math.min(peopleCapped, A.actual, B.actual);
-    })()
-    : peopleCapped;
+  actualPeople = Math.max(0, Math.min(actualPeople, peopleCapped));
+  intentPeople = Math.max(0, Math.min(intentPeople, peopleCapped));
 
   return {
     query_ir: ir,

@@ -6,7 +6,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { CORS, embed } from "../_shared/vertex.ts";
 import { canonicalAnchor, semanticIrKey } from "../_shared/query-normalization.ts";
-import { boundedIntersection, boundedUnion, reconcileReach, selectEvidence, subtractAudience } from "../_shared/audience-algebra.ts";
+import { boundedIntersection, boundedUnion, subtractAudience } from "../_shared/audience-algebra.ts";
 
 function normBrief(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9+]+/g, " ").replace(/\s+/g, " ").trim();
@@ -228,7 +228,7 @@ serve(async (req) => {
     }
 
     ir = JSON.parse(semanticIrKey(ir)) as IR;
-const ENGINE_VERSION = "v15-boolean-labels";
+const ENGINE_VERSION = "v16-unique-people";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
     const disabledIds = Array.isArray(body.disabled_ids)
@@ -783,7 +783,11 @@ async function plan(
   const expansion = card(expansionRows, "top");
   const modTokens = mods.map((m) => squash(m.token));
   const precisionRows = allHits.filter((h) => modTokens.some((t) => t && squash(`${h.signal} ${h.sub_category}`).includes(t)));
-  const precision = card(precisionRows.length ? precisionRows : allHits.filter((h) => h.reliability >= 0.7), "tight");
+  const precision = card(
+    (precisionRows.length ? precisionRows : allHits.filter((h) => h.reliability >= 0.7))
+      .filter((h) => Number(h.volume) * Number(h.reliability) >= 10000),
+    "top",
+  );
 
   const modLine = mods.length
     ? mods.map((m) => {
@@ -800,18 +804,14 @@ async function plan(
     above != null ? `Above ${above}` : null,
   ].filter(Boolean);
 
-  peopleCapped = evidence === "intent" ? Math.min(intentPeople, cap) : Math.min(actualPeople, cap);
+  peopleCapped = Math.min(actualPeople, cap);
 
   // Invariant: a narrowed audience can never exceed the unfiltered one.
   if (baseline && Number(baseline.people_reach) > 0) {
     // Filtering is a restriction of the unfiltered audience by its cube share, so the
     // parts always add back up to the whole.
-    const baselineReach = evidence === "actual"
-      ? Number(baseline.actual_people || 0)
-      : evidence === "intent"
-      ? Number(baseline.intent_people || 0)
-      : Number(baseline.people_reach);
-    const capTotal = baselineReach * keepShare;
+    const capTotal = Number(baseline.actual_people || baseline.people_reach || 0) * keepShare;
+    const capIntent = Number(baseline.intent_people || 0) * keepShare;
     if (filtered && capTotal > 0) {
       const k0 = capTotal / (peopleCapped || capTotal);
       peopleCapped = capTotal;
@@ -826,11 +826,12 @@ async function plan(
     }
     if (!evidence && Number(baseline.actual_people) >= 0) actualPeople = Math.min(actualPeople, Number(baseline.actual_people));
     if (!evidence && Number(baseline.intent_people) >= 0) intentPeople = Math.min(intentPeople, Number(baseline.intent_people));
+    if (filtered && capIntent > 0) intentPeople = Math.min(intentPeople, capIntent);
   }
 
   actualPeople = Math.min(actualPeople, cap);
   intentPeople = Math.min(intentPeople, cap);
-  peopleCapped = evidence === "intent" ? intentPeople : actualPeople;
+  peopleCapped = actualPeople;
 
   const geo_split = Object.entries(mix.geo).map(([k, sh]) => ({ geo_tier: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));
   const age_split = Object.entries(mix.age).map(([k, sh]) => ({ age_bucket: k, volume: Math.round(peopleCapped * sh), share: round4(sh) }));

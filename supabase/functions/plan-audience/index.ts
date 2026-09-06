@@ -281,12 +281,19 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
   const [vec] = await embed([queryText], "RETRIEVAL_QUERY");
   const { data: knn, error } = await sb.rpc("match_signals", {
     query_embedding: JSON.stringify(vec),
-    match_count: 60,
+    match_count: 200,
     min_sim: 0.5,
   });
   if (error) throw error;
 
   let rows: any[] = knn || [];
+
+  // Wide pull, then gate: only signals that truly belong to the resolved family stay.
+  // Without the gate a fixed top-N cut lets an unrelated row evict a relevant one.
+  if (anchor.family && !isPlatform) {
+    const gated = rows.filter((r: any) => belongsToFamily(r, anchor));
+    if (gated.length) rows = gated;
+  }
 
   // Family rows keep the matcher honest for exact family asks.
   if (anchor.family && !isPlatform) {
@@ -298,7 +305,7 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
       String(r.product_families || "").split(",").map((s: string) => s.trim()).includes(anchor.family)
     );
     const tokenHit = exact.filter((r: any) =>
-      [anchor.canonical, ...anchor.tokens].some((t) => squash(`${r.signal} ${r.sub_category} ${r.category}`).includes(squash(t)))
+      [anchor.canonical].some((t) => squash(`${r.signal} ${r.sub_category} ${r.category}`).includes(squash(t)))
     );
     // Always seed the family's own consumer rows so two phrasings of the same
     // intent cannot land on wildly different candidate sets.
@@ -311,6 +318,19 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
       rows.push({ ...r, sim: 0.5 });
     }
   }
+
+  // Deterministic order: family-exact first, then scale, then id. Never score order.
+  if (!isPlatform) {
+    const famKey = String(anchor.family || "").toLowerCase();
+    const exactOf = (r: any) =>
+      String(r.product_families || "").toLowerCase().split(/[,|]/).map((s: string) => s.trim()).includes(famKey) ? 0 : 1;
+    rows = [...rows].sort((a: any, b: any) =>
+      exactOf(a) - exactOf(b) ||
+      Number(b.volume || 0) - Number(a.volume || 0) ||
+      String(a.master_signal_id).localeCompare(String(b.master_signal_id))
+    );
+  }
+
 
   // Business / RFQ supplier rows never belong in a consumer audience.
   if (!wantsB2B) {

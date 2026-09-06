@@ -6,5 +6,5 @@
 - [x] Verify 100 paraphrases plus existing audience regressions
 - [x] Correct AND, OR, and exclusion audience algebra
 - [x] Reconcile purchase-backed and interest-backed totals
-- [ ] Add Boolean regression coverage and deploy fresh cache versions
+- [x] Add Boolean regression coverage and deploy fresh cache versions
 - [ ] Verify repeated live planner scenarios and page controls

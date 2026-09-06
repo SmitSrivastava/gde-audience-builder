@@ -28,6 +28,7 @@ Deno.test("keeps exclusions and true Boolean operators", () => {
   assertEquals(normalizeAudienceBrief("users who like party but not dineout"), "party NOT dine out");
   assertEquals(normalizeAudienceBrief("party excluding dineout"), "party NOT dine out");
   assertEquals(normalizeAudienceBrief("party or dineout"), "party OR dine out");
+  assertEquals(normalizeAudienceBrief("either party or dineout"), "party OR dine out");
 });
 
 Deno.test("semantic identity separates AND, OR, and exclusions", () => {

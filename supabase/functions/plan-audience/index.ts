@@ -727,7 +727,7 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
   const picked: Hit[] = [];
   const pickedIds = new Set<string>();
   for (const s of scored) {
-    const list = [...s.hits].sort((a, b) => b.volume - a.volume);
+    const list = s.hits.filter((hit) => !evidence || hit.cls === evidence).sort((a, b) => b.volume - a.volume);
     let n = 0;
     for (const r of list) {
       if (pickedIds.has(r.master_signal_id)) continue;
@@ -752,9 +752,10 @@ async function plan(sb: SupabaseClient, ir: IR, baseline: Baseline = null, evide
       master_signal_id: r.master_signal_id,
     }));
 
-  const primaryRows = scored[0]?.hits.filter((h) => h.cls === "actual") || [];
-  const primary = card(primaryRows.length ? primaryRows : scored[0]?.hits || [], "top");
-  const expansionRows = scored[1]?.hits || (scored[0]?.hits.filter((h) => h.cls === "intent") ?? []);
+  const primaryPool = scored[0]?.hits.filter((hit) => !evidence || hit.cls === evidence) || [];
+  const primaryRows = primaryPool.filter((h) => h.cls === "actual");
+  const primary = card(primaryRows.length ? primaryRows : primaryPool, "top");
+  const expansionRows = scored[1]?.hits.filter((hit) => !evidence || hit.cls === evidence) || primaryPool.filter((h) => h.cls === "intent");
   const expansion = card(expansionRows, "top");
   const modTokens = mods.map((m) => squash(m.token));
   const precisionRows = allHits.filter((h) => modTokens.some((t) => t && squash(`${h.signal} ${h.sub_category}`).includes(t)));

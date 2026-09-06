@@ -20,6 +20,13 @@ import './index.css';
 
 const queryClient = new QueryClient();
 
+// This domain serves ONLY the cohort planner to external partners —
+// no matter what path someone types, they land on the planner and can
+// never reach the rest of the product.
+const isPlannerOnlyDomain = () =>
+  typeof window !== 'undefined' &&
+  window.location.hostname === 'audienceplanner.smitsrivastava.com';
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -27,30 +34,34 @@ const App = () => (
       <Sonner />
       <AuthProvider>
         <SavedAudiencesProvider>
-          <BrowserRouter>
-            <Routes>
-              {/* New Planning page as first/index page (light theme, standalone) */}
-              <Route path="/" element={<PlanningPage />} />
+          {isPlannerOnlyDomain() ? (
+            <CohortPlanner />
+          ) : (
+            <BrowserRouter>
+              <Routes>
+                {/* New Planning page as first/index page (light theme, standalone) */}
+                <Route path="/" element={<PlanningPage />} />
 
-              {/* Partner usage dashboard (light theme, standalone) */}
-              <Route path="/partners/swiggy" element={<SwiggyPartnerDashboard />} />
+                {/* Partner usage dashboard (light theme, standalone) */}
+                <Route path="/partners/swiggy" element={<SwiggyPartnerDashboard />} />
 
-              {/* Cohort planner (Ask The Cohort. Know The Scale.) */}
-              <Route path="/planner" element={<CohortPlanner />} />
+                {/* Cohort planner (Ask The Cohort. Know The Scale.) */}
+                <Route path="/audienceplanner" element={<CohortPlanner />} />
 
 
-              {/* Netflix-themed app routes wrapped in Layout */}
-              <Route element={<Layout />}>
-                <Route path="dashboard" element={<Dashboard />} />
-                <Route path="admin/*" element={<Admin />} />
-                <Route path="segmentation/*" element={<Segmentation />} />
-                <Route path="enrichment/*" element={<Enrichment />} />
-                <Route path="activation/*" element={<Activation />} />
-              </Route>
+                {/* Netflix-themed app routes wrapped in Layout */}
+                <Route element={<Layout />}>
+                  <Route path="dashboard" element={<Dashboard />} />
+                  <Route path="admin/*" element={<Admin />} />
+                  <Route path="segmentation/*" element={<Segmentation />} />
+                  <Route path="enrichment/*" element={<Enrichment />} />
+                  <Route path="activation/*" element={<Activation />} />
+                </Route>
 
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          )}
         </SavedAudiencesProvider>
       </AuthProvider>
     </TooltipProvider>

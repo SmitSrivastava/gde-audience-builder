@@ -178,7 +178,7 @@ serve(async (req) => {
       });
     }
 
-    const ENGINE_VERSION = "v3";
+    const ENGINE_VERSION = "v4-post-modifier-metrics";
     const irHash = await sha256(ENGINE_VERSION + JSON.stringify(ir));
     const cached = await sb.from("result_cache").select("payload").eq("query_ir_hash", irHash).maybeSingle();
     if (cached.data?.payload) {
@@ -514,11 +514,12 @@ async function plan(sb: SupabaseClient, ir: IR) {
   for (const a of anchors) {
     const others = PLATFORM_RE.test(a.canonical) ? productFamilies : [];
     const { hits, contextHits, isPlatform, scale } = await matchAnchor(sb, a, mods, others);
-    const ids = [...new Set([...hits, ...contextHits].map((h) => h.master_signal_id))];
+    // Every downstream metric uses the same post-modifier list shown in the table.
+    // contextHits are retained only for diagnostics and must never enter scoring or slicing.
+    const ids = [...new Set(hits.map((h) => h.master_signal_id))];
     const volMap = await slice(sb, ids, geos, ages, genders, above);
     const actualRows = hits.filter((h) => h.cls === "actual");
-    // Interest-backed people come from the anchor's full list, not the modifier keep-list.
-    const intentRows = (contextHits.length ? contextHits : hits).filter((h) => h.cls === "intent");
+    const intentRows = hits.filter((h) => h.cls === "intent");
 
     let actual = await unionPeople(sb, actualRows, volMap, ir.mode);
     const intent = await unionPeople(sb, intentRows, volMap, ir.mode);
@@ -551,11 +552,20 @@ async function plan(sb: SupabaseClient, ir: IR) {
       .or(`and(family_a.eq.${A.anchor.family},family_b.eq.${B.anchor.family}),and(family_a.eq.${B.anchor.family},family_b.eq.${A.anchor.family})`);
     const rho = data?.[0] ? Number(data[0].rho_and_expected) : (A.anchor.family === B.anchor.family ? 0.75 : 0.12);
     const pop = await popSlice(sb, geos, ages, genders, above);
-    const a = A.actual || A.intent, b = B.actual || B.intent;
+    // Join the complete post-modifier audience on each side. Classification-specific
+    // KPIs are calculated separately below and never borrow an unfiltered fallback.
+    const a = A.actual + A.intent, b = B.actual + B.intent;
     const lower = Math.max(0, a + b - pop);
     const upper = Math.min(a, b);
     people = lower + rho * (upper - lower);
-    intentPeople = Math.min(A.intent || A.actual, B.intent || B.actual);
+    const joinClass = (left: number, right: number) => {
+      if (left <= 0 || right <= 0) return 0;
+      const classLower = Math.max(0, left + right - pop);
+      return classLower + rho * (Math.min(left, right) - classLower);
+    };
+    const actualPeople = joinClass(A.actual, B.actual);
+    intentPeople = joinClass(A.intent, B.intent);
+    people = Math.max(people, actualPeople, intentPeople);
   } else {
     const allActual = scored.flatMap((s) => s.hits.filter((h) => h.cls === "actual"));
     const allIntent = scored.flatMap((s) => s.hits.filter((h) => h.cls === "intent"));
@@ -572,7 +582,7 @@ async function plan(sb: SupabaseClient, ir: IR) {
   const mix = await splits(sb, allIds, geos, ages, genders, above);
   const cap = await popSlice(sb, geos, ages, genders, above);
   const peopleCapped = Math.max(0, Math.min(people, cap));
-  const modelled = Math.max(peopleCapped, intentPeople);
+  const modelled = peopleCapped;
 
   const perAnchor = Math.max(6, Math.floor(25 / Math.max(1, scored.length)));
   const picked: Hit[] = [];
@@ -619,7 +629,7 @@ async function plan(sb: SupabaseClient, ir: IR) {
     ? mods.map((m) => {
       const names = (m.applies_to || []).map((id) => anchors.find((a) => a.id === id)?.canonical).filter(Boolean);
       const label = m.token.charAt(0).toUpperCase() + m.token.slice(1);
-      return names.length ? `${label} (on ${names.map((n) => title(n!)).join(", ")} only)` : label;
+      return names.length ? `${label} (on ${names.map((n) => title(String(n))).join(", ")} only)` : label;
     }).join(" · ")
     : "none";
   const dimBits = [
@@ -630,13 +640,21 @@ async function plan(sb: SupabaseClient, ir: IR) {
     above != null ? `Above ${above}` : null,
   ].filter(Boolean);
 
+  const actualPeople = ir.join === "AND" && scored.length >= 2
+    ? (() => {
+      const A = scored[0], B = scored[1];
+      if (A.actual <= 0 || B.actual <= 0) return 0;
+      return Math.min(peopleCapped, A.actual, B.actual);
+    })()
+    : peopleCapped;
+
   return {
     query_ir: ir,
     base_cohort: anchors.map((a) => title(a.canonical)).join(` ${ir.join} `) || "—",
     modifier_line: modLine,
     dimension_line: dimBits.length ? dimBits.join(" · ") : "none",
     people_reach: Math.round(peopleCapped),
-    actual_people: Math.round(peopleCapped),
+    actual_people: Math.round(actualPeople),
     intent_people: Math.round(intentPeople),
     india_intelligence: Math.round(modelled),
     identifier_reach: Math.round(peopleCapped),
@@ -657,11 +675,10 @@ async function plan(sb: SupabaseClient, ir: IR) {
       anchors: anchors.map((a) => a.canonical),
       modifiers: mods,
       rules: [
-        "Semantic match on the partner catalog",
-        "Phone and device of one partner counted once",
-        "Cross-partner overlap from stored rules",
-        ir.join === "AND" ? "AND intersection with stored overlap" : "OR union",
-        "Capped by India population",
+        "Built from relevant partner audience signals",
+        "Each qualifier is applied to the audience it describes",
+        ir.join === "AND" ? "Includes people who meet every selected audience condition" : "Includes people who meet any selected audience condition",
+        "Presented as a unified addressable audience",
       ],
     },
   };

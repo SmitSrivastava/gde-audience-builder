@@ -38,7 +38,6 @@ function toPlanResult(brief: string, d: any): PlanResult {
   }));
   const bars = (arr: any[], key: string) =>
     (arr || []).map((x) => ({ label: x[key], value: Number(x.volume) || 0, pct: (Number(x.share) || 0) * 100 }));
-  const hb = d.how_built || {};
   return {
     title: brief,
     total: Number(d.people_reach) || 0,
@@ -49,7 +48,7 @@ function toPlanResult(brief: string, d: any): PlanResult {
     age: bars(d.age_split, "age_bucket"),
     gender: bars(d.gender_split, "gender_bucket"),
     partners: d.partners || [],
-    notes: `Read as ${d.base_cohort || brief}. People are de-duplicated: phone and device of the same partner count once, and overlap between partners uses stored overlap rules before the India population ceiling is applied. ${(hb.rules || []).join(" · ")}.`,
+    notes: `Read as ${d.base_cohort || brief}. Each qualifier is applied to the audience it describes, and the result represents people who meet ${d.query_ir?.join === "AND" ? "every selected condition" : "the selected conditions"}.`,
   } as PlanResult;
 }
 

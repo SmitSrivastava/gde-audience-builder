@@ -6,7 +6,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { CORS, embed } from "../_shared/vertex.ts";
 import { canonicalAnchor, semanticIrKey } from "../_shared/query-normalization.ts";
-import { boundedIntersection, boundedUnion, subtractAudience } from "../_shared/audience-algebra.ts";
+import { boundedIntersection, boundedUnion, capParts, reconcileUnion, subtractAudience } from "../_shared/audience-algebra.ts";
 
 function normBrief(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9+]+/g, " ").replace(/\s+/g, " ").trim();
@@ -228,7 +228,7 @@ serve(async (req) => {
     }
 
     ir = JSON.parse(semanticIrKey(ir)) as IR;
-const ENGINE_VERSION = "v17-union-people";
+const ENGINE_VERSION = "v18-union-reconciled";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
     const disabledIds = Array.isArray(body.disabled_ids)
@@ -728,14 +728,18 @@ async function plan(
       actual = Math.min(actual, capAll);
       total = Math.max(total, actual);
     }
+    const scaledActual = actual * m.scale;
+    const scaledIntent = intent * m.scale;
     scored.push({
       anchor: m.anchor,
       live,
-      total: Math.min(total * m.scale, population),
-      actual: actual * m.scale,
-      intent: intent * m.scale,
+      // Purchase and interest are each complete counts; the anchor total is their union.
+      total: Math.min(reconcileUnion(total * m.scale, scaledActual, scaledIntent), population),
+      actual: scaledActual,
+      intent: scaledIntent,
     });
   }
+
 
   /* 5. Boolean algebra across anchors */
   let people = 0, actualPeople = 0, intentPeople = 0;
@@ -766,9 +770,8 @@ async function plan(
       intentPeople = subtractAudience(intentPeople, xIntent, population, rho);
     }
   }
-  // Purchase and interest are overlapping subsets of the same de-duplicated people.
-  actualPeople = Math.min(actualPeople, people);
-  intentPeople = Math.min(intentPeople, people);
+  // Headline is the union of the two complete class counts: never below the larger, never above the sum.
+  people = reconcileUnion(people, actualPeople, intentPeople);
 
   const liveHits = scored.flatMap((s) => s.live);
   const evidenceHits = evidence ? liveHits.filter((h) => h.cls === evidence) : liveHits;
@@ -783,14 +786,16 @@ async function plan(
 
   // Invariant: a narrowed audience can never exceed the unfiltered one.
   if (baseline && Number(baseline.people_reach) > 0 && filtered) {
-    people = Math.min(people, Number(baseline.people_reach) * keepShare);
+    const ceiling = Number(baseline.people_reach) * keepShare;
+    ({ total: people, actual: actualPeople, intent: intentPeople } = capParts(people, actualPeople, intentPeople, ceiling));
     actualPeople = Math.min(actualPeople, Number(baseline.actual_people || 0) * keepShare);
     intentPeople = Math.min(intentPeople, Number(baseline.intent_people || 0) * keepShare);
+    people = reconcileUnion(people, actualPeople, intentPeople);
   }
 
-  people = Math.max(0, Math.min(people, cap));
-  actualPeople = Math.min(actualPeople, people);
-  intentPeople = Math.min(intentPeople, people);
+  ({ total: people, actual: actualPeople, intent: intentPeople } = capParts(people, actualPeople, intentPeople, cap));
+  people = Math.max(0, reconcileUnion(people, actualPeople, intentPeople));
+
 
   // The evidence toggle is a subset of the same result, never a new calculation.
   const headline = evidence === "actual" ? actualPeople : evidence === "intent" ? intentPeople : people;
@@ -865,8 +870,9 @@ async function plan(
       modifiers: mods,
       rules: [
         `Anchors: ${anchors.map((a) => title(a.canonical)).join(` ${ir.join} `)}`,
-        `Headline is one de-duplicated set of people covering purchase and interest evidence together: ${Math.round(people).toLocaleString("en-IN")}`,
-        `Purchase-backed inside it: ${Math.round(actualPeople).toLocaleString("en-IN")} · interest-backed inside it: ${Math.round(intentPeople).toLocaleString("en-IN")} (overlapping subsets, never added)`,
+        `Purchase-backed people counted in full: ${Math.round(actualPeople).toLocaleString("en-IN")} · interest-backed people counted in full: ${Math.round(intentPeople).toLocaleString("en-IN")}`,
+        `Headline is the union of those two overlapping groups — never below the larger, never above their sum: ${Math.round(people).toLocaleString("en-IN")}`,
+
         anchors.length < 2
           ? "Single anchor: people counted once after phone/device de-duplication and partner overlap."
           : ir.join === "AND"

@@ -30,3 +30,22 @@ export function selectEvidence(parts: ReachParts, evidence: "actual" | "intent" 
 export function subtractAudience(included: number, excluded: number, population: number, rho: number) {
   return Math.max(0, finite(included) - boundedIntersection(included, excluded, population, rho));
 }
+
+/**
+ * Purchase-backed and interest-backed are each counted in full and overlap each other.
+ * Their union can never be smaller than the larger one, nor larger than their sum.
+ */
+export function reconcileUnion(total: number, actual: number, intent: number) {
+  const a = finite(actual);
+  const i = finite(intent);
+  return Math.min(a + i, Math.max(Math.max(a, i), finite(total)));
+}
+
+/** Scale a whole result down to a ceiling, keeping the parts in proportion. */
+export function capParts(total: number, actual: number, intent: number, ceiling: number): ReachParts {
+  const t = finite(total);
+  const c = Math.max(0, finite(ceiling));
+  if (t <= c || t === 0) return { total: t, actual: finite(actual), intent: finite(intent) };
+  const k = c / t;
+  return { total: c, actual: finite(actual) * k, intent: finite(intent) * k };
+}

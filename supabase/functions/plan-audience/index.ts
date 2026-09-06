@@ -81,26 +81,12 @@ async function loadFamilyVocab(sb: SupabaseClient) {
   }
   FAMILY_VOCAB = map;
 }
-// Retrieval text is built from the RESOLVED audience only. The user's leftover words
-// never steer the vector search, so two phrasings of one intent retrieve the same set.
 function anchorQueryText(anchor: Anchor) {
   const fam = String(anchor.family || "").toLowerCase();
   const canon = FAMILY_VOCAB[fam] || [];
-  const own = [anchor.canonical].map(cleanPhrase).filter(Boolean);
-  const words = [...new Set([...canon, ...own])].sort();
+  const own = [anchor.canonical, ...anchor.tokens].map(cleanPhrase).filter(Boolean);
+  const words = [...new Set([...canon, ...own])];
   return (words.join(" ") || cleanPhrase(anchor.canonical) || anchor.canonical).trim();
-}
-// A candidate may only enter an audience if it actually belongs to the resolved family
-// (or literally names the audience). This replaces "closest 60 wins".
-function belongsToFamily(r: any, anchor: Anchor) {
-  const fam = String(anchor.family || "").toLowerCase();
-  if (!fam) return true;
-  const fams = String(r.product_families || "").toLowerCase().split(/[,|]/).map((s: string) => s.trim());
-  if (fams.includes(fam)) return true;
-  const famWords = (FAMILY_VOCAB[fam] || []).concat(cleanPhrase(fam.replace(/_/g, " ")));
-  const text = squash(`${r.signal} ${r.category} ${r.sub_category}`);
-  const probes = [...new Set([...famWords, cleanPhrase(anchor.canonical)])].filter((w) => w && w.length >= 4);
-  return probes.some((w) => text.includes(squash(w)));
 }
 
 
@@ -238,7 +224,7 @@ serve(async (req) => {
       });
     }
 
-    const ENGINE_VERSION = "v10-family-gated-retrieval";
+    const ENGINE_VERSION = "v11-restored-v9-with-evidence";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
     const irHash = await sha256(
@@ -285,19 +271,12 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
   const [vec] = await embed([queryText], "RETRIEVAL_QUERY");
   const { data: knn, error } = await sb.rpc("match_signals", {
     query_embedding: JSON.stringify(vec),
-    match_count: 200,
+    match_count: 60,
     min_sim: 0.5,
   });
   if (error) throw error;
 
   let rows: any[] = knn || [];
-
-  // Wide pull, then gate: only signals that truly belong to the resolved family stay.
-  // Without the gate a fixed top-N cut lets an unrelated row evict a relevant one.
-  if (anchor.family && !isPlatform) {
-    const gated = rows.filter((r: any) => belongsToFamily(r, anchor));
-    if (gated.length) rows = gated;
-  }
 
   // Family rows keep the matcher honest for exact family asks.
   if (anchor.family && !isPlatform) {
@@ -309,7 +288,7 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
       String(r.product_families || "").split(",").map((s: string) => s.trim()).includes(anchor.family)
     );
     const tokenHit = exact.filter((r: any) =>
-      [anchor.canonical].some((t) => squash(`${r.signal} ${r.sub_category} ${r.category}`).includes(squash(t)))
+      [anchor.canonical, ...anchor.tokens].some((t) => squash(`${r.signal} ${r.sub_category} ${r.category}`).includes(squash(t)))
     );
     // Always seed the family's own consumer rows so two phrasings of the same
     // intent cannot land on wildly different candidate sets.
@@ -322,19 +301,6 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
       rows.push({ ...r, sim: 0.5 });
     }
   }
-
-  // Deterministic order: family-exact first, then scale, then id. Never score order.
-  if (!isPlatform) {
-    const famKey = String(anchor.family || "").toLowerCase();
-    const exactOf = (r: any) =>
-      String(r.product_families || "").toLowerCase().split(/[,|]/).map((s: string) => s.trim()).includes(famKey) ? 0 : 1;
-    rows = [...rows].sort((a: any, b: any) =>
-      exactOf(a) - exactOf(b) ||
-      Number(b.volume || 0) - Number(a.volume || 0) ||
-      String(a.master_signal_id).localeCompare(String(b.master_signal_id))
-    );
-  }
-
 
   // Business / RFQ supplier rows never belong in a consumer audience.
   if (!wantsB2B) {

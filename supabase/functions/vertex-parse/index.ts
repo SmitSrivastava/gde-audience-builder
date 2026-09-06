@@ -39,14 +39,6 @@ H6. above 25 → dimensions.above_age=25 and age_bucket=["23-28","29-34","35-40"
 H7. City names go to dimensions.city; do not also fill geo_tier unless the user said Metro/Tier.
 H8. mode="expected". Typo repair allowed (choclate→chocolate, quickcommerce→quick commerce). Inventing a family is not.
 H9. NEVER output a number, volume or partner name (unless the user named it).
-H10a. NORMALISE BEFORE PARSING. Repair spelling and spacing (dineout->dine out, choclate->chocolate,
-      quickcommerce->quick commerce, skincare->skin care) and DROP every filler word that is not a
-      product/category noun, a modifier or a dimension: people, folks, users, guys, crowd, audience,
-      cohort, segment, who, that, likely to, looking for, buy, buyers, shoppers, go out for, along with.
-      Output the cleaned sentence in normalized_brief. Anchor tokens must contain ONLY meaningful
-      product/category words - never fillers, never verbs, never the modifier or dimension words.
-      "party people and go out for dineout", "party and dineout" and "party folks who dine out"
-      must all produce the SAME anchors, tokens and join.
 H10. If the brief contains "and" plus two product nouns you MUST emit two anchors. Never collapse to one.
 
 FEW-SHOTS
@@ -68,7 +60,6 @@ function responseSchema() {
   return {
     type: "OBJECT",
     properties: {
-      normalized_brief: { type: "STRING" },
       join: { type: "STRING", enum: ["AND", "OR"] },
       anchors: {
         type: "ARRAY",
@@ -153,8 +144,6 @@ function canonicalize(ir: any) {
   ir.dimensions.city = ir.dimensions.city ?? null;
   ir.dimensions.above_age = ir.dimensions.above_age ?? null;
   ir.refuse = ir.refuse || { flag: false, reason: null };
-  ir.normalized_brief = String(ir.normalized_brief || "").toLowerCase().trim() || null;
-
   // Primary first, then declaration order. Ids are re-stamped a1..aN and modifiers remapped.
   const src = (ir.anchors || []).map((a: any, i: number) => ({
     oldId: String(a.id || `a${i + 1}`),

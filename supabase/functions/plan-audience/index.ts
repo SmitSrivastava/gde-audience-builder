@@ -741,6 +741,8 @@ async function plan(
 
   /* 5. Boolean algebra across anchors */
   let people = 0, actualPeople = 0, intentPeople = 0;
+  const classFallback: string[] = [];
+
   if (scored.length) {
     people = scored[0].total;
     actualPeople = scored[0].actual;

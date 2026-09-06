@@ -228,7 +228,7 @@ serve(async (req) => {
     }
 
     ir = JSON.parse(semanticIrKey(ir)) as IR;
-const ENGINE_VERSION = "v21-stable-exclusion-family";
+const ENGINE_VERSION = "v22-stable-exclusion-family";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
     const disabledIds = Array.isArray(body.disabled_ids)
@@ -536,10 +536,15 @@ async function exclusionAnchors(sb: SupabaseClient, exclusions: string[]): Promi
     const vocabFamily = Object.entries(FAMILY_VOCAB).find(([, terms]) =>
       terms.some((term) => canonicalAnchor(term) === canonical)
     )?.[0];
+    const canonicalRoots = canonical.split(/\s+/).filter(Boolean).map((word) => word.slice(0, 3));
+    const rootedFamily = Object.keys(FAMILY_VOCAB).find((family) => {
+      const familyRoots = family.replace(/_/g, " ").split(/\s+/).filter(Boolean).map((word) => word.slice(0, 3));
+      return canonicalRoots.some((root) => root.length === 3 && familyRoots.includes(root));
+    });
     return {
       id: `x${index + 1}`,
       canonical,
-      family: String(exact?.family || vocabFamily || canonical.replace(/\s+/g, "_")).toLowerCase(),
+      family: String(exact?.family || vocabFamily || rootedFamily || canonical.replace(/\s+/g, "_")).toLowerCase(),
       role: "exclude",
       tokens: [canonical],
     };

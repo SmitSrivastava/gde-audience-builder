@@ -1,4 +1,5 @@
 const BOOLEAN_PHRASES: Array<[RegExp, string]> = [
+  [/\bbut\s+not\b/g, " __not__ "],
   [/\b(and also|plus also|who also|that also|along with|together with|combined with)\b/g, " __and__ "],
   [/\b(and|plus)\b/g, " __and__ "],
   [/\b(or|either)\b/g, " __or__ "],
@@ -38,6 +39,7 @@ const ALIASES: Array<[RegExp, string]> = [
   [/\bdining\s+out\b/g, "dine out"],
   [/\bquickcommerce\b/g, "quick commerce"],
   [/\bchoclate\b/g, "chocolate"],
+  [/\binternationally\b/g, "international"],
 ];
 
 function escapeRegExp(value: string) {
@@ -104,7 +106,13 @@ export function semanticIrKey(ir: Record<string, unknown>): string {
       city: dimensions.city ?? null,
       above_age: dimensions.above_age ?? null,
     },
+    exclusions: Array.isArray(ir.exclusions)
+      ? ir.exclusions.map((value) => canonicalAnchor(String(value))).filter(Boolean).sort()
+      : [],
     mode: ir.mode || "expected",
-    refuse: ir.refuse || { flag: false, reason: null },
+    refuse: {
+      flag: Boolean((ir.refuse as Record<string, unknown> | undefined)?.flag),
+      reason: (ir.refuse as Record<string, unknown> | undefined)?.reason ?? null,
+    },
   });
 }

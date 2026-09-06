@@ -5,6 +5,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { CORS, embed } from "../_shared/vertex.ts";
+import { canonicalAnchor, semanticIrKey } from "../_shared/query-normalization.ts";
 
 function normBrief(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9+]+/g, " ").replace(/\s+/g, " ").trim();
@@ -27,6 +28,7 @@ type IR = {
     city: string | null;
     above_age: number | null;
   };
+  exclusions?: string[];
   mode: "conservative" | "expected" | "aggressive";
   refuse: { flag: boolean; reason: string | null };
 };
@@ -84,7 +86,7 @@ async function loadFamilyVocab(sb: SupabaseClient) {
 function anchorQueryText(anchor: Anchor) {
   const fam = String(anchor.family || "").toLowerCase();
   const canon = FAMILY_VOCAB[fam] || [];
-  const own = [anchor.canonical, ...anchor.tokens].map(cleanPhrase).filter(Boolean);
+  const own = [canonicalAnchor(anchor.canonical)].map(cleanPhrase).filter(Boolean);
   const words = [...new Set([...canon, ...own])];
   return (words.join(" ") || cleanPhrase(anchor.canonical) || anchor.canonical).trim();
 }
@@ -224,11 +226,12 @@ serve(async (req) => {
       });
     }
 
-    const ENGINE_VERSION = "v11-restored-v9-with-evidence";
+    ir = JSON.parse(semanticIrKey(ir)) as IR;
+    const ENGINE_VERSION = "v12-semantic-query-ir";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
     const irHash = await sha256(
-      ENGINE_VERSION + JSON.stringify(ir) + JSON.stringify(body.baseline ?? null) + String(evidence),
+      ENGINE_VERSION + semanticIrKey(ir as unknown as Record<string, unknown>) + JSON.stringify(body.baseline ?? null) + String(evidence),
     );
     const cached = await sb.from("result_cache").select("payload").eq("query_ir_hash", irHash).maybeSingle();
     if (cached.data?.payload) {
@@ -276,7 +279,9 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
   });
   if (error) throw error;
 
-  let rows: any[] = knn || [];
+  let rows: any[] = [...(knn || [])].sort((a: any, b: any) =>
+    Number(b.sim) - Number(a.sim) || String(a.master_signal_id).localeCompare(String(b.master_signal_id))
+  );
 
   // Family rows keep the matcher honest for exact family asks.
   if (anchor.family && !isPlatform) {

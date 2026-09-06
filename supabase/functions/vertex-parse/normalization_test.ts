@@ -17,7 +17,7 @@ Deno.test("100 Party AND Dine Out paraphrases normalize identically", () => {
 
 Deno.test("keeps modifiers and dimensions", () => {
   assertEquals(normalizeAudienceBrief("audience interested in premium skincare"), "premium skincare");
-  assertEquals(normalizeAudienceBrief("people who are likely to travel internationally"), "travel internationally");
+  assertEquals(normalizeAudienceBrief("people who are likely to travel internationally"), "travel international");
   assertEquals(
     normalizeAudienceBrief("female users above 25 in metro interested in premium chocolate"),
     "female above 25 metro premium chocolate",
@@ -25,7 +25,7 @@ Deno.test("keeps modifiers and dimensions", () => {
 });
 
 Deno.test("keeps exclusions and true Boolean operators", () => {
-  assertEquals(normalizeAudienceBrief("users who like party but not dineout"), "party but NOT dine out");
+  assertEquals(normalizeAudienceBrief("users who like party but not dineout"), "party NOT dine out");
   assertEquals(normalizeAudienceBrief("party excluding dineout"), "party NOT dine out");
   assertEquals(normalizeAudienceBrief("party or dineout"), "party OR dine out");
 });

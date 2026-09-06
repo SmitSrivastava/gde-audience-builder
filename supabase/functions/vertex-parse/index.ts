@@ -4,6 +4,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import * as jose from "https://deno.land/x/jose@v5.9.6/index.ts";
+import { canonicalAnchor, normalizeAudienceBrief, semanticIrKey } from "../_shared/query-normalization.ts";
 
 const PROJECT = Deno.env.get("GCP_PROJECT") ?? "acceleration-ga-poc";
 const LOCATION = Deno.env.get("GCP_LOCATION") ?? "asia-south1";
@@ -14,7 +15,7 @@ const CORS = {
 };
 
 function normBrief(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9+]+/g, " ").replace(/\s+/g, " ").trim();
+  return normalizeAudienceBrief(s);
 }
 async function sha256(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
@@ -40,6 +41,12 @@ H7. City names go to dimensions.city; do not also fill geo_tier unless the user 
 H8. mode="expected". Typo repair allowed (choclate→chocolate, quickcommerce→quick commerce). Inventing a family is not.
 H9. NEVER output a number, volume or partner name (unless the user named it).
 H10. If the brief contains "and" plus two product nouns you MUST emit two anchors. Never collapse to one.
+H11. The input has already had conversational filler removed. Only retain anchors, modifiers, dimensions, Boolean operators and exclusions. Never put filler into canonical names or tokens.
+H12. `exclusions` contains canonical concepts following NOT, excluding, without or except. Exclusions are never positive anchors.
+
+FILLER CONTRACT
+Drop audience wrappers (people, users, audience, cohort, segment, consumers, customers, folks, individuals, personas, profiles, population), relative/person words (who, that, which, those, these, someone, anyone, everyone), generic intent verbs (like, love, prefer, interested in, likely to, looking for, want, need, use, consume, engage with), generic behaviour phrases (go for, go out for, visit for, spend time on, hang out, are into, based on, related to, associated with, affinity for), planning/request filler (find, show, give, get, create, build, identify, discover, search, estimate, calculate, size, audience size, scale, reach, target, planning, campaign, media, activation), and grammar filler (the, a, an, for, to, of, in, on, at, by, from, with, as, is, are, was, were, be, being, been, have, also).
+Never drop AND, OR, NOT, excluding, without, except; dimensions such as female, male, women, men, metro, tiers, age bands and cities; or modifiers such as premium, luxury, superpremium, affluent, hni, high-value, organic, heavy, frequent, international and budget.
 
 FEW-SHOTS
 "premium skincare and beauty user" →
@@ -51,6 +58,7 @@ FEW-SHOTS
 "snack shopper" → one anchor a1 canonical "snacks" family snacks; join OR.
 "quick commerce snack buyer" → join AND; a1 "quick commerce" (grocery_retail, primary), a2 "snacks" (snacks, and); no modifier.
 "premium chocolate female above 25" → one anchor a1 "chocolate" family sweets; modifier premium applies_to ["a1"]; dimensions gender_bucket ["Female"], above_age 25.
+"party people and dineout folks", "party and dineout", "people who party and go out for dineout", and "users who like partying and dine out" → the identical result: join AND; a1 canonical "party" family entertainment; a2 canonical "dine out" family dining.
 
 KNOWN FAMILIES
 sweets, ice_cream, bakery, snacks, biscuits, beverages_cold, beverages_hot, dairy, staples, fruits_veg, meat, packaged_food, baby, pet, beauty, personal_care, pharma, fitness, apparel, jewellery, electronics, appliances, home, auto, education, payments, grocery_retail, dining, travel, entertainment, finance, real_estate, agri, construction, industrial, toys, stationery, sexual_wellness, paan, luxury, fuel, utility`;
@@ -100,6 +108,7 @@ function responseSchema() {
           above_age: { type: "INTEGER" },
         },
       },
+      exclusions: { type: "ARRAY", items: { type: "STRING" } },
       mode: { type: "STRING", enum: ["conservative", "expected", "aggressive"] },
       refuse: {
         type: "OBJECT",
@@ -107,7 +116,7 @@ function responseSchema() {
         required: ["flag"],
       },
     },
-    required: ["join", "anchors", "modifiers", "dimensions", "mode", "refuse"],
+    required: ["join", "anchors", "modifiers", "dimensions", "exclusions", "mode", "refuse"],
   };
 }
 
@@ -144,14 +153,14 @@ function canonicalize(ir: any) {
   ir.dimensions.city = ir.dimensions.city ?? null;
   ir.dimensions.above_age = ir.dimensions.above_age ?? null;
   ir.refuse = ir.refuse || { flag: false, reason: null };
+  ir.exclusions = [...new Set((ir.exclusions || []).map((x: unknown) => canonicalAnchor(String(x))).filter(Boolean))].sort();
   // Primary first, then declaration order. Ids are re-stamped a1..aN and modifiers remapped.
   const src = (ir.anchors || []).map((a: any, i: number) => ({
     oldId: String(a.id || `a${i + 1}`),
-    canonical: String(a.canonical || "").toLowerCase().trim(),
+    canonical: canonicalAnchor(String(a.canonical || "")),
     family: String(a.family || "").toLowerCase().trim(),
     role: a.role || (i === 0 ? "primary" : "and"),
-    tokens: [...new Set((a.tokens || []).map((t: string) => String(t).toLowerCase().trim()).filter(Boolean))],
-    confidence: a.confidence ?? 0.8,
+    tokens: [...new Set((a.tokens || []).map((t: string) => canonicalAnchor(String(t))).filter(Boolean))],
   })).filter((a: any) => a.canonical);
   const ordered = [
     ...src.filter((a: any) => a.role === "primary"),
@@ -162,7 +171,7 @@ function canonicalize(ir: any) {
     const id = `a${i + 1}`;
     idMap[a.oldId] = id;
     if (!a.tokens.includes(a.canonical)) a.tokens.push(a.canonical);
-    return { id, canonical: a.canonical, family: a.family, role: i === 0 ? "primary" : (ir.join === "OR" ? "or" : "and"), tokens: a.tokens.sort(), confidence: a.confidence };
+    return { id, canonical: a.canonical, family: a.family, role: i === 0 ? "primary" : (ir.join === "OR" ? "or" : "and"), tokens: [a.canonical] };
   });
   const primaryId = ir.anchors[0]?.id;
   ir.modifiers = (ir.modifiers || []).map((m: any) => {
@@ -213,7 +222,11 @@ serve(async (req) => {
     }
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const n = normBrief(brief);
-    const h = await sha256(n);
+    if (!n) {
+      return new Response(JSON.stringify({ error: "brief has no audience concepts" }), { status: 400, headers: CORS });
+    }
+    const PARSER_VERSION = "semantic-v2";
+    const h = await sha256(`${PARSER_VERSION}:${n}`);
 
     const cached = await sb.from("query_cache").select("query_ir, source").eq("brief_norm_hash", h).maybeSingle();
     if (cached.data?.query_ir) {
@@ -231,12 +244,12 @@ serve(async (req) => {
     const sa = JSON.parse(raw);
     const token = await accessToken(sa);
 
-    let ir = await callVertex(token, brief);
-    const wantsAnd = /\b(and|plus|who also|along with)\b/.test(n);
+    let ir = await callVertex(token, n);
+    const wantsAnd = /\bAND\b/.test(n);
     if (wantsAnd && (ir.anchors || []).length < 2 && !ir.refuse?.flag) {
       ir = await callVertex(
         token,
-        brief,
+        n,
         "The brief joins two product nouns with and/plus. You MUST emit two anchors with join=AND, and attach each modifier only to the anchor it modifies.",
       );
       if ((ir.anchors || []).length < 2) {
@@ -245,9 +258,13 @@ serve(async (req) => {
     }
     if (wantsAnd && (ir.anchors || []).length >= 2) ir.join = "AND";
 
+    // Rebuild the object from its semantic form so model-only variation cannot
+    // alter cache identity, retrieval text or downstream sizing.
+    ir = JSON.parse(semanticIrKey(ir));
+
     await sb.from("query_cache").upsert({
       brief_norm_hash: h,
-      brief_norm: n,
+      brief_norm: `${PARSER_VERSION}:${n}`,
       query_ir: ir,
       source: "vertex",
     });

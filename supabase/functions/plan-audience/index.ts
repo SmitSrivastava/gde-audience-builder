@@ -178,7 +178,8 @@ serve(async (req) => {
       });
     }
 
-    const irHash = await sha256(JSON.stringify(ir));
+    const ENGINE_VERSION = "v3";
+    const irHash = await sha256(ENGINE_VERSION + JSON.stringify(ir));
     const cached = await sb.from("result_cache").select("payload").eq("query_ir_hash", irHash).maybeSingle();
     if (cached.data?.payload) {
       return new Response(JSON.stringify({ ...cached.data.payload, source, cached: true }), {

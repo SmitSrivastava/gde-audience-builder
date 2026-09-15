@@ -38,7 +38,10 @@ H5. A modifier attaches ONLY to the anchor it grammatically modifies, via applie
     Ambiguous ("premium users who buy skincare and beauty") → attach to the primary anchor id only.
 H6. above 25 → dimensions.above_age=25 and age_bucket=["23-28","29-34","35-40","41-46","47+"].
 H7. City names go to dimensions.city; do not also fill geo_tier unless the user said Metro/Tier.
-H8. mode="expected". Typo repair allowed (choclate→chocolate, quickcommerce→quick commerce). Inventing a family is not.
+H8. mode="expected". Typo repair allowed (choclate→chocolate, quickcommerce→quick commerce). Inventing a family is not: if no known family fits, set family="other".
+H8b. NEVER refuse a brief because its family is unknown or not a product. Income, salary, LPA, lakhs/lacs, HNI, affluent, emerging affluent, affluence index, demographics, NCCS, SEC and similar demographic briefs are always parsed with family="other" and refuse=false.
+    "people earning more than 20 lakhs per annum" → one anchor a1 canonical "income more than 20 lacs" family other, tokens ["income more than 20 lacs","income"]; no modifiers; refuse false.
+    "hni users" / "affluent audience" → one anchor a1 canonical "high income" family other, tokens ["high income","income"]; refuse false.
 H9. NEVER output a number, volume or partner name (unless the user named it).
 H10. If the brief contains "and" plus two product nouns you MUST emit two anchors. Never collapse to one.
 H11. The input has already had conversational filler removed. Only retain anchors, modifiers, dimensions, Boolean operators and exclusions. Never put filler into canonical names or tokens.

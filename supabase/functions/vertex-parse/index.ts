@@ -70,7 +70,7 @@ H14. SENTENCE SPLIT RULE. Split the brief only on join words: or / and / and-or 
     "quick commerce energy drink buyers or sport nutrition product buyers" -> piece 1 = quick commerce AND energy drink, piece 2 = sport nutrition products, combined with OR.
 
 KNOWN FAMILIES
-sweets, ice_cream, bakery, snacks, biscuits, beverages_cold, beverages_hot, dairy, staples, fruits_veg, meat, packaged_food, baby, pet, beauty, personal_care, pharma, fitness, apparel, jewellery, electronics, appliances, home, auto, education, payments, grocery_retail, dining, travel, entertainment, finance, real_estate, agri, construction, industrial, toys, stationery, sexual_wellness, paan, luxury, fuel, utility`;
+sweets, ice_cream, bakery, snacks, biscuits, beverages_cold, beverages_hot, dairy, staples, fruits_veg, meat, packaged_food, baby, pet, beauty, personal_care, pharma, fitness, apparel, jewellery, electronics, appliances, home, auto, education, payments, grocery_retail, dining, travel, entertainment, finance, real_estate, agri, construction, industrial, toys, stationery, sexual_wellness, paan, luxury, fuel, utility, other`;
 
 
 function responseSchema() {
@@ -272,7 +272,7 @@ serve(async (req) => {
     if (!n) {
       return new Response(JSON.stringify({ error: "brief has no audience concepts" }), { status: 400, headers: CORS });
     }
-    const PARSER_VERSION = "semantic-v5-piece-split";
+    const PARSER_VERSION = "semantic-v6-other-family";
     const h = await sha256(`${PARSER_VERSION}:${n}`);
 
     const cached = await sb.from("query_cache").select("query_ir, source").eq("brief_norm_hash", h).maybeSingle();

@@ -84,11 +84,13 @@ export function semanticIrKey(ir: Record<string, unknown>): string {
     join: ir.join === "AND" ? "AND" : "OR",
     anchors: anchors.map((raw: unknown, index: number) => {
       const anchor = (raw && typeof raw === "object") ? raw as Record<string, unknown> : {};
+      const group = Number(anchor.group);
       return {
         id: `a${index + 1}`,
         canonical: canonicalAnchor(String(anchor.canonical || "")),
         family: String(anchor.family || "").toLowerCase().trim(),
         role: index === 0 ? "primary" : (ir.join === "AND" ? "and" : "or"),
+        group: Number.isFinite(group) ? group : 0,
         tokens: [canonicalAnchor(String(anchor.canonical || ""))].filter(Boolean),
       };
     }),

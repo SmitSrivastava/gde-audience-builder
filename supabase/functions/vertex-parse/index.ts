@@ -14,6 +14,9 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Income / affluence / demographic briefs are valid audiences (family "other").
+const INCOME_RE = /\b(income|salary|salaried|earning|earn|earns|lpa|lakhs?|lacs?|crores?|hni|affluent|affluence|nccs|sec\s?[abc]|high\s+net\s+worth)\b/i;
+
 function normBrief(s: string): string {
   return normalizeAudienceBrief(s);
 }

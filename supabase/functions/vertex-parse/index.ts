@@ -199,7 +199,11 @@ async function callVertex(token: string, brief: string, reminder?: string) {
       temperature: 0,
       topP: 0,
       candidateCount: 1,
-      maxOutputTokens: 1024,
+      // Thinking tokens used to eat the whole budget and the call returned
+      // MAX_TOKENS with no text, which silently dropped the parse to the
+      // weak keyword fallback. No thinking, bigger budget.
+      maxOutputTokens: 4096,
+      thinkingConfig: { thinkingBudget: 0 },
       responseMimeType: "application/json",
       responseSchema: responseSchema(),
       seed: 0,

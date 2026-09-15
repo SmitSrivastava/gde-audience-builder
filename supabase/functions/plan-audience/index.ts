@@ -55,6 +55,7 @@ const FILLER = new Set([
   "who","that","those","and","or","the","a","an","of","for","in","with","lovers","fans",
 ]);
 const B2B_PARTNERS = new Set(["IndiaMart"]);
+const INCOME_RE = /\b(income|salary|salaried|earning|lpa|lakhs?|lacs?|hni|affluent|affluence|nccs)\b/i;
 const B2B_RE = /(b2b|business|wholesale|supplier|suppliers|rfq|distributor|manufacturer|bulk|trade)/i;
 function isB2BRow(r: any) {
   if (B2B_PARTNERS.has(String(r.partner_name))) return true;
@@ -234,7 +235,7 @@ serve(async (req) => {
     }
 
     ir = JSON.parse(semanticIrKey(ir)) as IR;
-const ENGINE_VERSION = "v26-piece-split";
+const ENGINE_VERSION = "v27-income-other-family";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
     const disabledIds = Array.isArray(body.disabled_ids)

@@ -455,7 +455,55 @@ async function sliceShares(
   return out;
 }
 
-async function uniquePeopleForClass(
+/**
+ * "High (20-50 Lacs) | Income" -> { key: "income", lo: 20, hi: 50 }.
+ * Returns null when the row is not a numeric band of a single variable.
+ */
+function bandOf(name: string): { key: string; lo: number; hi: number } | null {
+  const raw = String(name || "").toLowerCase();
+  if (!raw) return null;
+  if (/\b(home|house|property|flat|apartment|loan|emi|price|spend|basket|aov|value)\b/.test(raw)) return null;
+  const key = raw.includes("|")
+    ? raw.split("|").pop()!.trim()
+    : raw.replace(/\(.*?\)/g, " ").replace(/[0-9.+]/g, " ").replace(/\b(very|high|mid|low|upper|lower|above|below|under|over|lacs?|lakhs?|lpa|yrs?|years?|age|band|bucket)\b/g, " ").replace(/\s+/g, " ").trim();
+  if (!key) return null;
+  const range = raw.match(/(\d+(?:\.\d+)?)\s*(?:[–—-]|\bto\b)\s*(\d+(?:\.\d+)?)/);
+  if (range) return { key, lo: Number(range[1]), hi: Number(range[2]) };
+  const open = raw.match(/(\d+(?:\.\d+)?)\s*\+/) ||
+    (/\b(very high|above|more than|greater than|over)\b/.test(raw) ? raw.match(/(\d+(?:\.\d+)?)/) : null);
+  if (open) return { key, lo: Number(open[1]), hi: Number.POSITIVE_INFINITY };
+  return null;
+}
+
+/**
+ * Non-overlapping bands of the same variable within a partner are summed into a
+ * single node so the headline adds them instead of nesting them.
+ */
+function mergeExclusiveBands<T extends { partner: string; name: string; vol: number }>(items: T[]): T[] {
+  const buckets = new Map<string, T[]>();
+  const passthrough: T[] = [];
+  for (const it of items) {
+    const band = bandOf(it.name);
+    if (!band) { passthrough.push(it); continue; }
+    const k = `${it.partner}::${band.key}`;
+    buckets.set(k, [...(buckets.get(k) || []), it]);
+  }
+  const out = [...passthrough];
+  for (const group of buckets.values()) {
+    if (group.length < 2) { out.push(...group); continue; }
+    const sorted = [...group].sort((a, b) => bandOf(a.name)!.lo - bandOf(b.name)!.lo);
+    let exclusive = true;
+    for (let i = 1; i < sorted.length; i++) {
+      if (bandOf(sorted[i]).lo < bandOf(sorted[i - 1]).hi - 1e-9) { exclusive = false; break; }
+    }
+    if (!exclusive) { out.push(...group); continue; }
+    const largest = [...sorted].sort((a, b) => b.vol - a.vol)[0];
+    out.push({ ...largest, vol: sorted.reduce((s, x) => s + x.vol, 0) });
+  }
+  return out;
+}
+
+
   sb: SupabaseClient,
   rows: Hit[],
   shareMap: Record<string, number>,

@@ -251,22 +251,39 @@ serve(async (req) => {
     const sa = JSON.parse(raw);
     const token = await accessToken(sa);
 
-    let ir = await callVertex(token, n);
-    const wantsAnd = /\bAND\b/.test(n);
-    const wantsOr = /\bOR\b/.test(n);
-    const wantsMultiple = wantsAnd || wantsOr;
-    if (wantsMultiple && (ir.anchors || []).length < 2 && !ir.refuse?.flag) {
-      ir = await callVertex(
-        token,
-        n,
-        `The brief joins two product nouns with ${wantsAnd ? "AND" : "OR"}. You MUST emit both anchors with join=${wantsAnd ? "AND" : "OR"}, and attach each modifier only to the anchor it modifies.`,
-      );
-      if ((ir.anchors || []).length < 2) {
-        ir.refuse = { flag: true, reason: "Could not resolve both parts of this brief. Try naming each audience separately." };
+    // Each side of a top-level OR is compiled on its own so that
+    // "quick commerce energy buyers OR sports nutrition buyers" becomes
+    // (quick commerce AND energy drinks) OR (sports nutrition) instead of a
+    // flat union that swallows a whole category.
+    const sides = n.split(/\s+OR\s+/).map((s) => s.trim()).filter(Boolean);
+    let ir: any;
+    if (sides.length > 1) {
+      const parsed = [] as any[];
+      for (const side of sides) {
+        const sideIr = await callVertex(token, side);
+        if ((sideIr.anchors || []).length) parsed.push(sideIr);
       }
+      if (parsed.length < sides.length) {
+        ir = parsed[0] ?? { anchors: [], modifiers: [], exclusions: [], dimensions: {}, mode: "expected" };
+        ir.refuse = { flag: true, reason: "Could not resolve every part of this request. Try naming each audience separately." };
+      } else {
+        ir = mergeSides(parsed);
+      }
+    } else {
+      ir = await callVertex(token, n);
+      const wantsAnd = /\bAND\b/.test(n);
+      if (wantsAnd && (ir.anchors || []).length < 2 && !ir.refuse?.flag) {
+        ir = await callVertex(
+          token,
+          n,
+          `The brief joins two product nouns with AND. You MUST emit both anchors with join=AND, and attach each modifier only to the anchor it modifies.`,
+        );
+        if ((ir.anchors || []).length < 2) {
+          ir.refuse = { flag: true, reason: "Could not resolve both parts of this brief. Try naming each audience separately." };
+        }
+      }
+      if (wantsAnd && (ir.anchors || []).length >= 2) ir.join = "AND";
     }
-    if (wantsAnd && (ir.anchors || []).length >= 2) ir.join = "AND";
-    if (wantsOr && (ir.anchors || []).length >= 2) ir.join = "OR";
 
     // Rebuild the object from its semantic form so model-only variation cannot
     // alter cache identity, retrieval text or downstream sizing.

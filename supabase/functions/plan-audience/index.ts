@@ -494,7 +494,7 @@ function mergeExclusiveBands<T extends { partner: string; name: string; vol: num
     const sorted = [...group].sort((a, b) => bandOf(a.name)!.lo - bandOf(b.name)!.lo);
     let exclusive = true;
     for (let i = 1; i < sorted.length; i++) {
-      if (bandOf(sorted[i])!.lo < bandOf(sorted[i - 1])!.hi - 1e-9) { exclusive = false; break; }
+      if (bandOf(sorted[i].name)!.lo < bandOf(sorted[i - 1].name)!.hi - 1e-9) { exclusive = false; break; }
     }
     if (!exclusive) { out.push(...group); continue; }
     const largest = [...sorted].sort((a, b) => b.vol - a.vol)[0];

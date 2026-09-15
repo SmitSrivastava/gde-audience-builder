@@ -266,7 +266,7 @@ serve(async (req) => {
     if (!n) {
       return new Response(JSON.stringify({ error: "brief has no audience concepts" }), { status: 400, headers: CORS });
     }
-    const PARSER_VERSION = "semantic-v3-boolean";
+    const PARSER_VERSION = "semantic-v4-or-groups";
     const h = await sha256(`${PARSER_VERSION}:${n}`);
 
     const cached = await sb.from("query_cache").select("query_ir, source").eq("brief_norm_hash", h).maybeSingle();

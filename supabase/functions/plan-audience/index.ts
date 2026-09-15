@@ -16,7 +16,7 @@ async function sha256(s: string) {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-type Anchor = { id: string; canonical: string; family: string; role: string; tokens: string[] };
+type Anchor = { id: string; canonical: string; family: string; role: string; tokens: string[]; group?: number };
 type Modifier = { token: string; op: string; param?: number | null; applies_to?: string[] };
 type IR = {
   join: "AND" | "OR";
@@ -234,7 +234,7 @@ serve(async (req) => {
     }
 
     ir = JSON.parse(semanticIrKey(ir)) as IR;
-const ENGINE_VERSION = "v24-full-signal-table";
+const ENGINE_VERSION = "v25-or-groups";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
     const disabledIds = Array.isArray(body.disabled_ids)

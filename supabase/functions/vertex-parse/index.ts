@@ -325,6 +325,17 @@ serve(async (req) => {
       if (wantsAnd && (ir.anchors || []).length >= 2) ir.join = "AND";
     }
 
+    // Demographic / affluence briefs are never refused. If the model returned no
+    // anchor (it treated "hni"/"affluent" as a modifier), build the income anchor
+    // with family "other" so retrieval runs on the signal master as usual.
+    if (!(ir.anchors || []).length && INCOME_RE.test(n)) {
+      const amount = n.match(/(\d+(?:\.\d+)?)\s*(?:lakhs?|lacs?|lpa)/i)?.[1];
+      const canonical = amount ? `income more than ${amount} lacs` : "high income";
+      ir.anchors = [{ id: "a1", canonical, family: "other", role: "primary", tokens: [canonical, "income"] }];
+      ir.modifiers = [];
+      ir.refuse = { flag: false, reason: null };
+    }
+
     // Rebuild the object from its semantic form so model-only variation cannot
     // alter cache identity, retrieval text or downstream sizing.
     ir = JSON.parse(semanticIrKey(ir));

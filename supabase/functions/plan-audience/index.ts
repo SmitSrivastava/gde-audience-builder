@@ -498,10 +498,15 @@ async function uniquePeopleForClass(
     deduped.push({ ...largest, vol: Math.max(...group.map((row) => row.vol)) });
   }
 
+  // Bands of one variable (income ladders, age buckets) are mutually exclusive
+  // cuts of the same person base: they add, they never nest and never take rho.
+  const merged = mergeExclusiveBands(deduped);
+
   // Within one partner and evidence class, smaller same-family/sector rows are
   // mostly nested inside the largest row; they are never blindly summed.
   const groups = new Map<string, It[]>();
-  for (const it of deduped) groups.set(it.partner, [...(groups.get(it.partner) || []), it]);
+  for (const it of merged) groups.set(it.partner, [...(groups.get(it.partner) || []), it]);
+
   const nodes: { partner: string; people: number; families: Set<string>; sectors: Set<string> }[] = [];
   for (const [partner, lst0] of groups) {
     const lst = [...lst0].sort((a, b) => b.vol - a.vol);

@@ -158,12 +158,18 @@ async function pass1(sb: SupabaseClient, brief: string): Promise<IR | null> {
     const key = String(c.normalized_city || c.city_name || "").toLowerCase();
     if (key && has(key)) { dimensions.city = String(c.city_name); break; }
   }
-  const joinAnd = / and | plus | who also | along with /.test(` ${n} `) && anchors.length >= 2;
+  const joinAnd = /\bAND\b/.test(n) && anchors.length >= 2;
+  // This keyword fallback cannot split a multi-part request. Rather than size
+  // one side and present it as the whole answer, say so.
+  const sides = n.split(/\s+OR\s+/).filter(Boolean).length;
+  const unresolved = (sides > 1 && anchors.length < sides) || (/\bAND\b/.test(n) && anchors.length < 2);
   return {
     join: joinAnd ? "AND" : "OR",
     anchors, modifiers, dimensions,
     mode: "expected",
-    refuse: { flag: false, reason: null },
+    refuse: unresolved
+      ? { flag: true, reason: "Only part of this request could be recognised, so no number is shown. Try naming each audience separately." }
+      : { flag: false, reason: null },
   };
 }
 

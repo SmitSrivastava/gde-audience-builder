@@ -818,7 +818,7 @@ async function plan(
       const xActual = (await uniquePeopleForClass(sb, excludedLive.filter((h) => h.cls === "actual"), shares, ir.mode, population)) * matchedX.scale;
       const xIntent = (await uniquePeopleForClass(sb, excludedLive.filter((h) => h.cls === "intent"), shares, ir.mode, population)) * matchedX.scale;
       const xTotal = Math.min(reconcileUnion(rawXTotal * matchedX.scale, xActual, xIntent), population);
-      const rho = await pairRho(sb, family, excluded.family);
+      const rho = await pairRho(sb, scored[scored.length - 1].anchor.family, excluded.family);
        people = booleanReach(people, xTotal, population, rho).difference;
        actualPeople = booleanReach(actualPeople, xActual, population, rho).difference;
        intentPeople = booleanReach(intentPeople, xIntent, population, rho).difference;

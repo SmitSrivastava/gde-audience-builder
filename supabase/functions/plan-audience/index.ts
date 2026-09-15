@@ -234,7 +234,7 @@ serve(async (req) => {
     }
 
     ir = JSON.parse(semanticIrKey(ir)) as IR;
-const ENGINE_VERSION = "v25-or-groups";
+const ENGINE_VERSION = "v26-piece-split";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
     const disabledIds = Array.isArray(body.disabled_ids)
@@ -888,7 +888,17 @@ async function plan(
     above != null ? `Above ${above}` : null,
   ].filter(Boolean);
 
-  const includedLabel = anchors.map((a) => title(a.canonical)).join(` ${ir.join} `) || "—";
+  // Label the cohort the way it is actually evaluated: anchors that belong to
+  // the same piece of the sentence are ANDed, the join word only separates pieces.
+  const labelGroups = new Map<number, string[]>();
+  for (const a of anchors) {
+    const g = Number((a as unknown as { group?: number }).group ?? 0);
+    labelGroups.set(g, [...(labelGroups.get(g) || []), title(a.canonical)]);
+  }
+  const groupLabels = [...labelGroups.entries()].sort((x, y) => x[0] - y[0]).map(([, names]) => names);
+  const includedLabel = groupLabels.length > 1
+    ? groupLabels.map((names) => names.length > 1 ? `(${names.join(" AND ")})` : names[0]).join(" OR ")
+    : (groupLabels[0]?.join(` ${ir.join} `) || "—");
   const exclusionLabel = (ir.exclusions || []).map((value) => title(canonicalAnchor(value))).filter(Boolean);
   const baseCohort = exclusionLabel.length ? `${includedLabel} EXCLUDING ${exclusionLabel.join(" AND ")}` : includedLabel;
 

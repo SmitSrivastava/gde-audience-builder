@@ -82,18 +82,31 @@ export function semanticIrKey(ir: Record<string, unknown>): string {
     : {};
   return JSON.stringify({
     join: ir.join === "AND" ? "AND" : "OR",
-    anchors: anchors.map((raw: unknown, index: number) => {
-      const anchor = (raw && typeof raw === "object") ? raw as Record<string, unknown> : {};
-      const group = Number(anchor.group);
-      return {
-        id: `a${index + 1}`,
-        canonical: canonicalAnchor(String(anchor.canonical || "")),
-        family: String(anchor.family || "").toLowerCase().trim(),
-        role: index === 0 ? "primary" : (ir.join === "AND" ? "and" : "or"),
-        group: Number.isFinite(group) ? group : 0,
-        tokens: [canonicalAnchor(String(anchor.canonical || ""))].filter(Boolean),
-      };
-    }),
+    anchors: (() => {
+      const groups = anchors.map((raw: unknown) => {
+        const g = Number((raw as Record<string, unknown>)?.group);
+        return Number.isFinite(g) ? g : 0;
+      });
+      const multiGroup = new Set(groups).size > 1;
+      return anchors.map((raw: unknown, index: number) => {
+        const anchor = (raw && typeof raw === "object") ? raw as Record<string, unknown> : {};
+        // Inside one cohort piece (same group) anchors are ANDed. The join word
+        // only applies between pieces, so only a group change yields "or".
+        const role = index === 0
+          ? "primary"
+          : multiGroup
+          ? (groups[index] === groups[index - 1] ? "and" : "or")
+          : (ir.join === "AND" ? "and" : "or");
+        return {
+          id: `a${index + 1}`,
+          canonical: canonicalAnchor(String(anchor.canonical || "")),
+          family: String(anchor.family || "").toLowerCase().trim(),
+          role,
+          group: groups[index],
+          tokens: [canonicalAnchor(String(anchor.canonical || ""))].filter(Boolean),
+        };
+      });
+    })(),
     modifiers: modifiers.map((raw: unknown) => {
       const modifier = (raw && typeof raw === "object") ? raw as Record<string, unknown> : {};
       return {

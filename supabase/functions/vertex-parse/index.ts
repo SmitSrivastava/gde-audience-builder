@@ -63,6 +63,9 @@ FEW-SHOTS
 "party or dineout" and "either party or dineout" → the identical result: join OR; a1 canonical "party" family entertainment role primary; a2 canonical "dine out" family dining role or.
 "party excluding dineout" → join OR; a1 canonical "party" family entertainment; exclusions ["dine out"].
 
+H14. SENTENCE SPLIT RULE. Split the brief only on join words: or / and / and-or / plus / either. Each resulting piece is ONE cohort. Words inside a piece are never joins. Inside a piece, juxtaposition means AND (platform x product, product x buyers): "quick commerce energy drink buyers" = quick commerce AND energy drink, exactly the same as if no join word were present anywhere in the sentence. A join word applies BETWEEN pieces only, once. The presence of one OR must never turn inside-piece AND logic into OR.
+    "quick commerce energy drink buyers or sport nutrition product buyers" -> piece 1 = quick commerce AND energy drink, piece 2 = sport nutrition products, combined with OR.
+
 KNOWN FAMILIES
 sweets, ice_cream, bakery, snacks, biscuits, beverages_cold, beverages_hot, dairy, staples, fruits_veg, meat, packaged_food, baby, pet, beauty, personal_care, pharma, fitness, apparel, jewellery, electronics, appliances, home, auto, education, payments, grocery_retail, dining, travel, entertainment, finance, real_estate, agri, construction, industrial, toys, stationery, sexual_wellness, paan, luxury, fuel, utility`;
 
@@ -266,7 +269,7 @@ serve(async (req) => {
     if (!n) {
       return new Response(JSON.stringify({ error: "brief has no audience concepts" }), { status: 400, headers: CORS });
     }
-    const PARSER_VERSION = "semantic-v4-or-groups";
+    const PARSER_VERSION = "semantic-v5-piece-split";
     const h = await sha256(`${PARSER_VERSION}:${n}`);
 
     const cached = await sb.from("query_cache").select("query_ir, source").eq("brief_norm_hash", h).maybeSingle();

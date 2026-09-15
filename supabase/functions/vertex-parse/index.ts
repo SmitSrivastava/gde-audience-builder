@@ -29,7 +29,7 @@ Emit JSON only that matches the schema.
 
 HARD RULES
 H1. Anchors are product / category / platform nouns. Every product noun is its own anchor. Give each anchor an id: a1, a2, a3 in order.
-H2. premium / luxury / affordable / heavy / organic / budget / affluent / hni are MODIFIERS, never anchors.
+H2. premium / luxury / affordable / heavy / organic / budget / affluent / hni are MODIFIERS when they qualify a product noun in the same piece ("premium skincare"). If the piece has NO product noun, the affluence/income/demographic concept itself IS the anchor with family "other" (e.g. "hni users", "affluent audience", "people earning more than 20 lakhs").
 H3. female / male / young / metro / urban / bharat / tier 1-3 / above 25 / city names are DIMENSIONS, never modifiers, never anchors.
 H4. "and" / "plus" / "who also" / "along with" → join=AND. "or" / "either" → join=OR. Single anchor → join=OR.
 H5. A modifier attaches ONLY to the anchor it grammatically modifies, via applies_to = [anchor id].

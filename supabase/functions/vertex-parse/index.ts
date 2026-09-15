@@ -14,6 +14,9 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Income / affluence / demographic briefs are valid audiences (family "other").
+const INCOME_RE = /\b(income|salary|salaried|earning|earn|earns|lpa|lakhs?|lacs?|crores?|hni|affluent|affluence|nccs|sec\s?[abc]|high\s+net\s+worth)\b/i;
+
 function normBrief(s: string): string {
   return normalizeAudienceBrief(s);
 }
@@ -29,7 +32,7 @@ Emit JSON only that matches the schema.
 
 HARD RULES
 H1. Anchors are product / category / platform nouns. Every product noun is its own anchor. Give each anchor an id: a1, a2, a3 in order.
-H2. premium / luxury / affordable / heavy / organic / budget / affluent / hni are MODIFIERS, never anchors.
+H2. premium / luxury / affordable / heavy / organic / budget / affluent / hni are MODIFIERS when they qualify a product noun in the same piece ("premium skincare"). If the piece has NO product noun, the affluence/income/demographic concept itself IS the anchor with family "other" (e.g. "hni users", "affluent audience", "people earning more than 20 lakhs").
 H3. female / male / young / metro / urban / bharat / tier 1-3 / above 25 / city names are DIMENSIONS, never modifiers, never anchors.
 H4. "and" / "plus" / "who also" / "along with" → join=AND. "or" / "either" → join=OR. Single anchor → join=OR.
 H5. A modifier attaches ONLY to the anchor it grammatically modifies, via applies_to = [anchor id].
@@ -38,7 +41,10 @@ H5. A modifier attaches ONLY to the anchor it grammatically modifies, via applie
     Ambiguous ("premium users who buy skincare and beauty") → attach to the primary anchor id only.
 H6. above 25 → dimensions.above_age=25 and age_bucket=["23-28","29-34","35-40","41-46","47+"].
 H7. City names go to dimensions.city; do not also fill geo_tier unless the user said Metro/Tier.
-H8. mode="expected". Typo repair allowed (choclate→chocolate, quickcommerce→quick commerce). Inventing a family is not.
+H8. mode="expected". Typo repair allowed (choclate→chocolate, quickcommerce→quick commerce). Inventing a family is not: if no known family fits, set family="other".
+H8b. NEVER refuse a brief because its family is unknown or not a product. Income, salary, LPA, lakhs/lacs, HNI, affluent, emerging affluent, affluence index, demographics, NCCS, SEC and similar demographic briefs are always parsed with family="other" and refuse=false.
+    "people earning more than 20 lakhs per annum" → one anchor a1 canonical "income more than 20 lacs" family other, tokens ["income more than 20 lacs","income"]; no modifiers; refuse false.
+    "hni users" / "affluent audience" → one anchor a1 canonical "high income" family other, tokens ["high income","income"]; refuse false.
 H9. NEVER output a number, volume or partner name (unless the user named it).
 H10. If the brief contains "and" plus two product nouns you MUST emit two anchors. Never collapse to one.
 H11. The input has already had conversational filler removed. Only retain anchors, modifiers, dimensions, Boolean operators and exclusions. Never put filler into canonical names or tokens.
@@ -67,7 +73,7 @@ H14. SENTENCE SPLIT RULE. Split the brief only on join words: or / and / and-or 
     "quick commerce energy drink buyers or sport nutrition product buyers" -> piece 1 = quick commerce AND energy drink, piece 2 = sport nutrition products, combined with OR.
 
 KNOWN FAMILIES
-sweets, ice_cream, bakery, snacks, biscuits, beverages_cold, beverages_hot, dairy, staples, fruits_veg, meat, packaged_food, baby, pet, beauty, personal_care, pharma, fitness, apparel, jewellery, electronics, appliances, home, auto, education, payments, grocery_retail, dining, travel, entertainment, finance, real_estate, agri, construction, industrial, toys, stationery, sexual_wellness, paan, luxury, fuel, utility`;
+sweets, ice_cream, bakery, snacks, biscuits, beverages_cold, beverages_hot, dairy, staples, fruits_veg, meat, packaged_food, baby, pet, beauty, personal_care, pharma, fitness, apparel, jewellery, electronics, appliances, home, auto, education, payments, grocery_retail, dining, travel, entertainment, finance, real_estate, agri, construction, industrial, toys, stationery, sexual_wellness, paan, luxury, fuel, utility, other`;
 
 
 function responseSchema() {
@@ -269,7 +275,7 @@ serve(async (req) => {
     if (!n) {
       return new Response(JSON.stringify({ error: "brief has no audience concepts" }), { status: 400, headers: CORS });
     }
-    const PARSER_VERSION = "semantic-v5-piece-split";
+    const PARSER_VERSION = "semantic-v6-other-family";
     const h = await sha256(`${PARSER_VERSION}:${n}`);
 
     const cached = await sb.from("query_cache").select("query_ir, source").eq("brief_norm_hash", h).maybeSingle();
@@ -320,6 +326,17 @@ serve(async (req) => {
         }
       }
       if (wantsAnd && (ir.anchors || []).length >= 2) ir.join = "AND";
+    }
+
+    // Demographic / affluence briefs are never refused. If the model returned no
+    // anchor (it treated "hni"/"affluent" as a modifier), build the income anchor
+    // with family "other" so retrieval runs on the signal master as usual.
+    if (!(ir.anchors || []).length && INCOME_RE.test(n)) {
+      const amount = n.match(/(\d+(?:\.\d+)?)\s*(?:lakhs?|lacs?|lpa)/i)?.[1];
+      const canonical = amount ? `income more than ${amount} lacs` : "high income";
+      ir.anchors = [{ id: "a1", canonical, family: "other", role: "primary", tokens: [canonical, "income"] }];
+      ir.modifiers = [];
+      ir.refuse = { flag: false, reason: null };
     }
 
     // Rebuild the object from its semantic form so model-only variation cannot

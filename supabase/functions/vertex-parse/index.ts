@@ -190,6 +190,40 @@ function canonicalize(ir: any) {
   return ir;
 }
 
+/** Combine independently compiled OR sides: AND inside a side, OR across sides. */
+function mergeSides(sides: any[]) {
+  const anchors: any[] = [];
+  const modifiers: any[] = [];
+  const dimensions: any = { geo_tier: [], age_bucket: [], gender_bucket: [], city: null, above_age: null };
+  const exclusions = new Set<string>();
+  sides.forEach((side, g) => {
+    const idMap: Record<string, string> = {};
+    for (const a of side.anchors || []) {
+      const id = `a${anchors.length + 1}`;
+      idMap[a.id] = id;
+      anchors.push({ ...a, id, group: g, role: anchors.length === 0 ? "primary" : (side.anchors.length > 1 ? "and" : "or") });
+    }
+    for (const m of side.modifiers || []) {
+      modifiers.push({ ...m, applies_to: (m.applies_to || []).map((x: string) => idMap[x]).filter(Boolean) });
+    }
+    for (const key of ["geo_tier", "age_bucket", "gender_bucket"]) {
+      for (const v of side.dimensions?.[key] || []) if (!dimensions[key].includes(v)) dimensions[key].push(v);
+    }
+    dimensions.city = dimensions.city ?? side.dimensions?.city ?? null;
+    dimensions.above_age = dimensions.above_age ?? side.dimensions?.above_age ?? null;
+    for (const x of side.exclusions || []) exclusions.add(x);
+  });
+  return {
+    join: "OR",
+    anchors,
+    modifiers,
+    dimensions,
+    exclusions: [...exclusions].sort(),
+    mode: sides[0]?.mode || "expected",
+    refuse: { flag: false, reason: null },
+  };
+}
+
 async function callVertex(token: string, brief: string, reminder?: string) {
   const url = `https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/${LOCATION}/publishers/google/models/${MODEL}:generateContent`;
   const body = {
@@ -199,7 +233,11 @@ async function callVertex(token: string, brief: string, reminder?: string) {
       temperature: 0,
       topP: 0,
       candidateCount: 1,
-      maxOutputTokens: 1024,
+      // Thinking tokens used to eat the whole budget and the call returned
+      // MAX_TOKENS with no text, which silently dropped the parse to the
+      // weak keyword fallback. No thinking, bigger budget.
+      maxOutputTokens: 4096,
+      thinkingConfig: { thinkingBudget: 0 },
       responseMimeType: "application/json",
       responseSchema: responseSchema(),
       seed: 0,
@@ -228,7 +266,7 @@ serve(async (req) => {
     if (!n) {
       return new Response(JSON.stringify({ error: "brief has no audience concepts" }), { status: 400, headers: CORS });
     }
-    const PARSER_VERSION = "semantic-v3-boolean";
+    const PARSER_VERSION = "semantic-v4-or-groups";
     const h = await sha256(`${PARSER_VERSION}:${n}`);
 
     const cached = await sb.from("query_cache").select("query_ir, source").eq("brief_norm_hash", h).maybeSingle();
@@ -247,22 +285,39 @@ serve(async (req) => {
     const sa = JSON.parse(raw);
     const token = await accessToken(sa);
 
-    let ir = await callVertex(token, n);
-    const wantsAnd = /\bAND\b/.test(n);
-    const wantsOr = /\bOR\b/.test(n);
-    const wantsMultiple = wantsAnd || wantsOr;
-    if (wantsMultiple && (ir.anchors || []).length < 2 && !ir.refuse?.flag) {
-      ir = await callVertex(
-        token,
-        n,
-        `The brief joins two product nouns with ${wantsAnd ? "AND" : "OR"}. You MUST emit both anchors with join=${wantsAnd ? "AND" : "OR"}, and attach each modifier only to the anchor it modifies.`,
-      );
-      if ((ir.anchors || []).length < 2) {
-        ir.refuse = { flag: true, reason: "Could not resolve both parts of this brief. Try naming each audience separately." };
+    // Each side of a top-level OR is compiled on its own so that
+    // "quick commerce energy buyers OR sports nutrition buyers" becomes
+    // (quick commerce AND energy drinks) OR (sports nutrition) instead of a
+    // flat union that swallows a whole category.
+    const sides = n.split(/\s+OR\s+/).map((s) => s.trim()).filter(Boolean);
+    let ir: any;
+    if (sides.length > 1) {
+      const parsed = [] as any[];
+      for (const side of sides) {
+        const sideIr = await callVertex(token, side);
+        if ((sideIr.anchors || []).length) parsed.push(sideIr);
       }
+      if (parsed.length < sides.length) {
+        ir = parsed[0] ?? { anchors: [], modifiers: [], exclusions: [], dimensions: {}, mode: "expected" };
+        ir.refuse = { flag: true, reason: "Could not resolve every part of this request. Try naming each audience separately." };
+      } else {
+        ir = mergeSides(parsed);
+      }
+    } else {
+      ir = await callVertex(token, n);
+      const wantsAnd = /\bAND\b/.test(n);
+      if (wantsAnd && (ir.anchors || []).length < 2 && !ir.refuse?.flag) {
+        ir = await callVertex(
+          token,
+          n,
+          `The brief joins two product nouns with AND. You MUST emit both anchors with join=AND, and attach each modifier only to the anchor it modifies.`,
+        );
+        if ((ir.anchors || []).length < 2) {
+          ir.refuse = { flag: true, reason: "Could not resolve both parts of this brief. Try naming each audience separately." };
+        }
+      }
+      if (wantsAnd && (ir.anchors || []).length >= 2) ir.join = "AND";
     }
-    if (wantsAnd && (ir.anchors || []).length >= 2) ir.join = "AND";
-    if (wantsOr && (ir.anchors || []).length >= 2) ir.join = "OR";
 
     // Rebuild the object from its semantic form so model-only variation cannot
     // alter cache identity, retrieval text or downstream sizing.

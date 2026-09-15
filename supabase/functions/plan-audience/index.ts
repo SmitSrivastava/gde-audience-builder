@@ -16,7 +16,7 @@ async function sha256(s: string) {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-type Anchor = { id: string; canonical: string; family: string; role: string; tokens: string[] };
+type Anchor = { id: string; canonical: string; family: string; role: string; tokens: string[]; group?: number };
 type Modifier = { token: string; op: string; param?: number | null; applies_to?: string[] };
 type IR = {
   join: "AND" | "OR";
@@ -158,12 +158,18 @@ async function pass1(sb: SupabaseClient, brief: string): Promise<IR | null> {
     const key = String(c.normalized_city || c.city_name || "").toLowerCase();
     if (key && has(key)) { dimensions.city = String(c.city_name); break; }
   }
-  const joinAnd = / and | plus | who also | along with /.test(` ${n} `) && anchors.length >= 2;
+  const joinAnd = /\bAND\b/.test(n) && anchors.length >= 2;
+  // This keyword fallback cannot split a multi-part request. Rather than size
+  // one side and present it as the whole answer, say so.
+  const sides = n.split(/\s+OR\s+/).filter(Boolean).length;
+  const unresolved = (sides > 1 && anchors.length < sides) || (/\bAND\b/.test(n) && anchors.length < 2);
   return {
     join: joinAnd ? "AND" : "OR",
     anchors, modifiers, dimensions,
     mode: "expected",
-    refuse: { flag: false, reason: null },
+    refuse: unresolved
+      ? { flag: true, reason: "Only part of this request could be recognised, so no number is shown. Try naming each audience separately." }
+      : { flag: false, reason: null },
   };
 }
 
@@ -228,7 +234,7 @@ serve(async (req) => {
     }
 
     ir = JSON.parse(semanticIrKey(ir)) as IR;
-const ENGINE_VERSION = "v24-full-signal-table";
+const ENGINE_VERSION = "v25-or-groups";
     const evidence: "actual" | "intent" | null =
       body.evidence === "actual" || body.evidence === "intent" ? body.evidence : null;
     const disabledIds = Array.isArray(body.disabled_ids)
@@ -744,44 +750,54 @@ async function plan(
   const classFallback: string[] = [];
 
   if (scored.length) {
-    people = scored[0].total;
-    actualPeople = scored[0].actual;
-    intentPeople = scored[0].intent;
-    let family = scored[0].anchor.family;
-    for (const current of scored.slice(1)) {
-      const rho = await pairRho(sb, family, current.anchor.family);
-      // AND is calculated exactly once per measure. OR is then A+B-AND;
-      // it never estimates overlap through a separate path.
-      const totalBoolean = booleanReach(people, current.total, population, rho);
-      const actualBoolean = booleanReach(actualPeople, current.actual, population, rho);
-      const intentBoolean = booleanReach(intentPeople, current.intent, population, rho);
-      people = ir.join === "AND" ? totalBoolean.intersection : totalBoolean.union;
-      actualPeople = ir.join === "AND" ? actualBoolean.intersection : actualBoolean.union;
-      intentPeople = ir.join === "AND" ? intentBoolean.intersection : intentBoolean.union;
-      family = current.anchor.family;
-    }
+    // Anchors belonging to the same side of a top-level OR share a group.
+    // Inside a group the anchors are combined with AND, the groups with OR,
+    // so "(quick commerce AND energy) OR sports nutrition" is sized as written.
+    const groupOf = (s: typeof scored[number]) => Number((s.anchor as unknown as { group?: number }).group ?? 0);
+    const groupIds = [...new Set(scored.map(groupOf))].sort((a, b) => a - b);
+    const grouped = groupIds.length > 1;
+
+    const foldMeasure = async (pick: (s: typeof scored[number]) => number, onlyNonZero: boolean) => {
+      const groupValues: { value: number; family: string }[] = [];
+      for (const g of groupIds) {
+        const all = scored.filter((s) => groupOf(s) === g);
+        const parts = onlyNonZero ? all.filter((s) => pick(s) > 0) : all;
+        if (!parts.length) continue;
+        let value = pick(parts[0]);
+        let fam = parts[0].anchor.family;
+        for (const cur of parts.slice(1)) {
+          const rho = await pairRho(sb, fam, cur.anchor.family);
+          // AND is calculated exactly once per measure. OR is then A+B-AND;
+          // it never estimates overlap through a separate path.
+          const b = booleanReach(value, pick(cur), population, rho);
+          value = grouped || ir.join === "AND" ? b.intersection : b.union;
+          fam = cur.anchor.family;
+        }
+        groupValues.push({ value, family: fam });
+      }
+      if (!groupValues.length) return 0;
+      let out = groupValues[0].value;
+      let fam = groupValues[0].family;
+      for (const cur of groupValues.slice(1)) {
+        const rho = await pairRho(sb, fam, cur.family);
+        out = booleanReach(out, cur.value, population, rho).union;
+        fam = cur.family;
+      }
+      return out;
+    };
+
+    people = await foldMeasure((s) => s.total, false);
+    actualPeople = await foldMeasure((s) => s.actual, false);
+    intentPeople = await foldMeasure((s) => s.intent, false);
 
     // A class must never collapse to zero just because one side of the join has
     // no rows of that class. Fold the class over the anchors that do carry it.
-    const foldClass = async (pick: (s: typeof scored[number]) => number) => {
-      const parts = scored.filter((s) => pick(s) > 0);
-      if (!parts.length) return 0;
-      let value = pick(parts[0]);
-      let fam = parts[0].anchor.family;
-      for (const cur of parts.slice(1)) {
-        const rho = await pairRho(sb, fam, cur.anchor.family);
-        const b = booleanReach(value, pick(cur), population, rho);
-        value = ir.join === "AND" ? b.intersection : b.union;
-        fam = cur.anchor.family;
-      }
-      return value;
-    };
     if (people > 0 && actualPeople <= 0) {
-      actualPeople = Math.min(await foldClass((s) => s.actual), people);
+      actualPeople = Math.min(await foldMeasure((s) => s.actual, true), people);
       if (actualPeople > 0) classFallback.push("purchase-backed");
     }
     if (people > 0 && intentPeople <= 0) {
-      intentPeople = Math.min(await foldClass((s) => s.intent), people);
+      intentPeople = Math.min(await foldMeasure((s) => s.intent, true), people);
       if (intentPeople > 0) classFallback.push("interest-backed");
     }
     // The headline is the union of the two full class counts.
@@ -802,7 +818,7 @@ async function plan(
       const xActual = (await uniquePeopleForClass(sb, excludedLive.filter((h) => h.cls === "actual"), shares, ir.mode, population)) * matchedX.scale;
       const xIntent = (await uniquePeopleForClass(sb, excludedLive.filter((h) => h.cls === "intent"), shares, ir.mode, population)) * matchedX.scale;
       const xTotal = Math.min(reconcileUnion(rawXTotal * matchedX.scale, xActual, xIntent), population);
-      const rho = await pairRho(sb, family, excluded.family);
+      const rho = await pairRho(sb, scored[scored.length - 1].anchor.family, excluded.family);
        people = booleanReach(people, xTotal, population, rho).difference;
        actualPeople = booleanReach(actualPeople, xActual, population, rho).difference;
        intentPeople = booleanReach(intentPeople, xIntent, population, rho).difference;

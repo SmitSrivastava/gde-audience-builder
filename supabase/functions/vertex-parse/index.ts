@@ -190,6 +190,40 @@ function canonicalize(ir: any) {
   return ir;
 }
 
+/** Combine independently compiled OR sides: AND inside a side, OR across sides. */
+function mergeSides(sides: any[]) {
+  const anchors: any[] = [];
+  const modifiers: any[] = [];
+  const dimensions: any = { geo_tier: [], age_bucket: [], gender_bucket: [], city: null, above_age: null };
+  const exclusions = new Set<string>();
+  sides.forEach((side, g) => {
+    const idMap: Record<string, string> = {};
+    for (const a of side.anchors || []) {
+      const id = `a${anchors.length + 1}`;
+      idMap[a.id] = id;
+      anchors.push({ ...a, id, group: g, role: anchors.length === 0 ? "primary" : (side.anchors.length > 1 ? "and" : "or") });
+    }
+    for (const m of side.modifiers || []) {
+      modifiers.push({ ...m, applies_to: (m.applies_to || []).map((x: string) => idMap[x]).filter(Boolean) });
+    }
+    for (const key of ["geo_tier", "age_bucket", "gender_bucket"]) {
+      for (const v of side.dimensions?.[key] || []) if (!dimensions[key].includes(v)) dimensions[key].push(v);
+    }
+    dimensions.city = dimensions.city ?? side.dimensions?.city ?? null;
+    dimensions.above_age = dimensions.above_age ?? side.dimensions?.above_age ?? null;
+    for (const x of side.exclusions || []) exclusions.add(x);
+  });
+  return {
+    join: "OR",
+    anchors,
+    modifiers,
+    dimensions,
+    exclusions: [...exclusions].sort(),
+    mode: sides[0]?.mode || "expected",
+    refuse: { flag: false, reason: null },
+  };
+}
+
 async function callVertex(token: string, brief: string, reminder?: string) {
   const url = `https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/${LOCATION}/publishers/google/models/${MODEL}:generateContent`;
   const body = {

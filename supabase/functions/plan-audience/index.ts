@@ -297,8 +297,9 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
     Number(b.sim) - Number(a.sim) || String(a.master_signal_id).localeCompare(String(b.master_signal_id))
   );
 
-  // Family rows keep the matcher honest for exact family asks.
-  if (anchor.family && !isPlatform) {
+  // Family rows keep the matcher honest for exact family asks. "other" is a
+  // catch-all bucket, not a family, so it is never used to seed rows.
+  if (anchor.family && anchor.family !== "other" && !isPlatform) {
     const { data: fam } = await sb.from("signal")
       .select("master_signal_id, partner_name, pii, signal, product_families, platform_tags, layer, sector, category, sub_category, volume, reliability")
       .eq("row_role", "intent").gt("reliability", 0)
@@ -319,6 +320,23 @@ async function matchAnchor(sb: SupabaseClient, anchor: Anchor, mods: Modifier[],
       seen.add(r.master_signal_id);
       rows.push({ ...r, sim: 0.5 });
     }
+  }
+
+  // Income / affluence asks resolve on the demographic income ladder, never on
+  // property ownership bands ("20 lakhs - 30 Lakhs | Home").
+  const incomeText = `${anchor.canonical} ${anchor.tokens.join(" ")}`;
+  if (INCOME_RE.test(incomeText)) {
+    const { data: inc } = await sb.from("signal")
+      .select("master_signal_id, partner_name, pii, signal, product_families, platform_tags, layer, sector, category, sub_category, volume, reliability")
+      .gt("reliability", 0).ilike("signal", "%| Income%").limit(500);
+    const floor = Number(incomeText.match(/(\d+(?:\.\d+)?)\s*(?:lakhs?|lacs?|lpa)/i)?.[1] ?? NaN);
+    const keep = (inc || []).filter((r: any) => {
+      if (/home|property|ownership/i.test(`${r.signal} ${r.category}`)) return false;
+      if (!Number.isFinite(floor)) return true;
+      const low = Number(String(r.sub_category || "").match(/(\d+(?:\.\d+)?)/)?.[1] ?? NaN);
+      return Number.isFinite(low) && low >= floor;
+    });
+    if (keep.length) rows = keep.map((r: any) => ({ ...r, sim: 0.95 }));
   }
 
   // Business / RFQ supplier rows never belong in a consumer audience.

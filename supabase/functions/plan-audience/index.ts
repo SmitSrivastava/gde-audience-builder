@@ -503,6 +503,7 @@ function mergeExclusiveBands<T extends { partner: string; name: string; vol: num
   return out;
 }
 
+async function uniquePeopleForClass(
 
   sb: SupabaseClient,
   rows: Hit[],
